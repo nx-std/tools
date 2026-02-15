@@ -91,7 +91,7 @@ pub fn handle_subcommand(args: Args) {
 
     for build_crate in build_crates {
         let mut build_args = build_args.clone();
-        build_args.extend_from_slice(&[String::from("-p"), build_crate.name]);
+        build_args.extend_from_slice(&[String::from("-p"), build_crate.name.to_string()]);
         if args.all_features {
             build_args.push("--all-features".to_string());
         }
