@@ -10,6 +10,9 @@
     // At 05:00AM on day-of-month 1 and 15
     '* 5 1,15 * *',
   ],
+  ignorePaths: [
+    'cargo-nx/default/**',
+  ],
   configMigration: true,
   rebaseWhen: 'behind-base-branch',
   lockFileMaintenance: {
