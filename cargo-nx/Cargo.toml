@@ -11,7 +11,7 @@ description = "Cargo subcommand to simplify creating and building Nintendo Switc
 [dependencies]
 cargo_metadata = { version = "0.19" }
 chrono = "0.4"
-cipher = "0.4"
+cipher = "0.5"
 clap = { version = "4", features = ["derive"] }
 linkle = { git = "https://github.com/XorTroll/linkle", branch = "npdm" }
 netloader = { version = "0.1.0", path = "../netloader" }
