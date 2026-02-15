@@ -2,15 +2,15 @@ use std::{fmt, path::PathBuf};
 
 const INITIAL_VERSION: &str = "0.1.0";
 
-const DEFAULT_AUTHOR: &str = "aarch64-switch-rs authors";
+const DEFAULT_AUTHOR: &str = "nx-std authors";
 
 const DEFAULT_PROGRAM_ID: u64 = 0x0100AAAABBBBCCCC;
 
 /// The supported Rust editions
-const SUPPORTED_EDITIONS: &[&str] = &["2015", "2018", "2021"];
+const SUPPORTED_EDITIONS: &[&str] = &["2015", "2018", "2021", "2024"];
 
 /// Which Rust edition to use by default
-const DEFAULT_EDITION: &str = "2021";
+const DEFAULT_EDITION: &str = "2024";
 
 /// Which package type to use by default
 const DEFAULT_PACKAGE_TYPE: &str = "nro";

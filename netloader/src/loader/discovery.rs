@@ -79,20 +79,14 @@ pub async fn discover(timeout: Duration, retries: u32) -> io::Result<Option<IpAd
             tracing::debug!(%attempt, "sending ping message");
             if let Err(error) = send_ping_message(&broadcast_socket, BROADCAST_ADDR).await {
                 tracing::debug!(%attempt, ?error, "sendto error");
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    DiscoveryError::SendPingFailed(error),
-                ));
+                return Err(io::Error::other(DiscoveryError::SendPingFailed(error)));
             }
 
             // Wait for a response from the server
             tracing::debug!(%attempt, "waiting pong response");
             match recv_pong_response(&receive_socket).await {
                 Ok(res) => Ok(res),
-                Err(error) => Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    DiscoveryError::RecvPongFailed(error),
-                )),
+                Err(error) => Err(io::Error::other(DiscoveryError::RecvPongFailed(error))),
             }
         };
 
@@ -136,10 +130,7 @@ async fn recv_pong_response(socket: &UdpSocket) -> io::Result<IpAddr> {
             "invalid response message: '{}'",
             String::from_utf8_lossy(&buf[..len])
         );
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            DiscoveryError::InvalidResponse,
-        ))
+        Err(io::Error::other(DiscoveryError::InvalidResponse))
     }
 }
 

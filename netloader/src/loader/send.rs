@@ -9,7 +9,7 @@ use std::{
     io::{BufReader, Cursor, Read, Write},
 };
 
-use flate2::{bufread::ZlibEncoder, Compression};
+use flate2::{Compression, bufread::ZlibEncoder};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{TcpStream, ToSocketAddrs},
@@ -66,7 +66,7 @@ where
     let rc = stream.read_i32_le().await?;
     match rc {
         0 => Ok(()),
-        _ => Err(io::Error::new(io::ErrorKind::Other, SendNroError::from(rc))),
+        _ => Err(io::Error::other(SendNroError::from(rc))),
     }
 }
 
@@ -108,7 +108,7 @@ where
     // Wait and check the response code
     let rc = stream.read_i32_le().await?;
     if rc != 0 {
-        return Err(io::Error::new(io::ErrorKind::Other, "Unknown error"));
+        return Err(io::Error::other("Unknown error"));
     }
 
     Ok(())

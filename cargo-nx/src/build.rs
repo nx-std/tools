@@ -40,7 +40,7 @@ pub struct Args {
     pub features: Option<String>,
     /// Passes the `all-features` flag to `cargo build`
     #[arg(long)]
-    pub all_features: bool
+    pub all_features: bool,
 }
 
 /// Handle the `build` subcommand.
@@ -50,7 +50,7 @@ pub fn handle_subcommand(args: Args) {
         .no_deps()
         .exec()
         .unwrap();
-    
+
     let rust_target_path = match std::env::var("RUST_TARGET_PATH") {
         Ok(s) => PathBuf::from(s),
         Err(_) => metadata.workspace_root.into_std_path_buf(),
@@ -77,12 +77,14 @@ pub fn handle_subcommand(args: Args) {
 
     let build_crates: Vec<Package> = match args.package {
         Some(target_package) => {
-            vec![metadata
-                .packages
-                .iter()
-                .find(|needle| needle.name == target_package)
-                .unwrap_or_else(|| panic!("Failed to find package {target_package}"))
-                .clone()]
+            vec![
+                metadata
+                    .packages
+                    .iter()
+                    .find(|needle| needle.name == target_package)
+                    .unwrap_or_else(|| panic!("Failed to find package {target_package}"))
+                    .clone(),
+            ]
         }
         None => metadata.packages.to_vec(),
     };
@@ -96,7 +98,7 @@ pub fn handle_subcommand(args: Args) {
 
         if let Some(features) = args.features.as_ref() {
             build_args.extend_from_slice(&[String::from("--features"), features.clone()]);
-        } 
+        }
 
         let metadata_v = build_crate.metadata;
 
@@ -181,7 +183,7 @@ struct NroMetadata {
     romfs: Option<String>,
     icon: Option<String>,
     nacp: Option<Nacp>,
-    overlay: Option<bool>
+    overlay: Option<bool>,
 }
 
 fn get_output_elf_path_as(artifact: &Artifact, extension: &str) -> PathBuf {
@@ -192,7 +194,14 @@ fn get_output_elf_path_as(artifact: &Artifact, extension: &str) -> PathBuf {
 
 fn handle_nro_format(root: &Path, artifact: &Artifact, metadata: NroMetadata) {
     let elf = artifact.filenames[0].clone();
-    let nro = get_output_elf_path_as(artifact, if metadata.overlay == Some(true) { "ovl" } else { "nro" });
+    let nro = get_output_elf_path_as(
+        artifact,
+        if metadata.overlay == Some(true) {
+            "ovl"
+        } else {
+            "nro"
+        },
+    );
 
     let romfs = metadata
         .romfs

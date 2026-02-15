@@ -67,7 +67,7 @@ pub async fn handle_subcommand(
     }
 
     // Check if the file extension is valid
-    if !nro_file.extension().map_or(false, |ext| ext == "nro") {
+    if nro_file.extension().is_none_or(|ext| ext != "nro") {
         eprintln!(
             "The file must have a `.nro` extension: {}",
             nro_file.display()
@@ -90,11 +90,11 @@ pub async fn handle_subcommand(
     // Otherwise, if the path ends with a `/`, join the file name to the path
     let dest_path = match path {
         Some(path) => {
-            if path.extension().map_or(false, |ext| ext == "nro") {
+            if path.extension().is_some_and(|ext| ext == "nro") {
                 path.to_str()
                     .expect("Failed to convert path to string")
                     .to_string()
-            } else if path.to_str().map_or(false, |path| path.ends_with("/")) {
+            } else if path.to_str().is_some_and(|path| path.ends_with("/")) {
                 path.join(nro_file_name)
                     .to_str()
                     .expect("Failed to convert path to string")

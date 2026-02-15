@@ -1,35 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "tools/netloader",
+    "cargo-nx",
+    "netloader",
 ]
 
 [workspace.dependencies]
 thiserror = "2.0"
-
-
-[package]
-name = "cargo-nx"
-version = "0.2.0"
-authors = ["XorTroll", "LNSD"]
-license = "MIT"
-homepage = "https://github.com/aarch64-switch-rs/"
-repository = "https://github.com/aarch64-switch-rs/cargo-nx/"
-edition = "2021"
-description = "Cargo subcommand to simplify creating and building Nintendo Switch homebrew projects"
-
-[dependencies]
-cargo_metadata = { version = "0.19" }
-chrono = "0.4"
-cipher = "0.4"
-clap = { version = "4", features = ["derive"] }
-linkle = { git = "https://github.com/XorTroll/linkle", branch = "npdm" }
-netloader = { version = "0.1.0", path = "tools/netloader" }
-num-bigint = "0.4"
-serde = "1"
-serde_derive = "1"
-serde_json = "1"
-thiserror.workspace = true
-tokio = { version = "1.42.0", default-features = false, features = ["macros", "rt", "signal", "time"] }
-tracing = { version = "0.1.41", default-features = false }
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
