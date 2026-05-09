@@ -35,19 +35,42 @@ pub struct ToolArgs {
 
 #[derive(clap::Subcommand)]
 pub enum ToolSubcommand {
-    #[command(about = "Convert an ELF file to NRO format")]
+    #[command(
+        about = "Convert an ELF file to NRO format",
+        after_help = include_str!("cmd/tool/elf2nro__after_help.md")
+    )]
     Elf2nro(cmd::tool::elf2nro::Args),
-    #[command(about = "Convert an ELF file to NSO format")]
+    #[command(
+        about = "Convert an ELF file to NSO format",
+        after_help = include_str!("cmd/tool/elf2nso__after_help.md")
+    )]
     Elf2nso(cmd::tool::elf2nso::Args),
-    #[command(about = "Convert an ELF file to KIP format")]
+    #[command(
+        about = "Convert an ELF file to KIP format",
+        after_help = include_str!("cmd/tool/elf2kip__after_help.md")
+    )]
     Elf2kip(cmd::tool::elf2kip::Args),
-    #[command(name = "build_pfs0", about = "Build a PFS0 archive from a directory")]
+    #[command(
+        name = "build_pfs0",
+        about = "Build a PFS0 archive from a directory",
+        after_help = include_str!("cmd/tool/build_pfs0__after_help.md")
+    )]
     BuildPfs0(cmd::tool::build_pfs0::Args),
-    #[command(name = "build_romfs", about = "Build a RomFS image from a directory")]
+    #[command(
+        name = "build_romfs",
+        about = "Build a RomFS image from a directory",
+        after_help = include_str!("cmd/tool/build_romfs__after_help.md")
+    )]
     BuildRomfs(cmd::tool::build_romfs::Args),
-    #[command(about = "Convert JSON metadata to NPDM format")]
+    #[command(
+        about = "Convert JSON metadata to NPDM format",
+        after_help = include_str!("cmd/tool/npdmtool__after_help.md")
+    )]
     Npdmtool(cmd::tool::npdmtool::Args),
-    #[command(about = "Create or manipulate NACP files")]
+    #[command(
+        about = "Create or manipulate NACP files",
+        after_help = include_str!("cmd/tool/nacptool__after_help.md")
+    )]
     Nacptool(cmd::tool::nacptool::Args),
     #[command(
         name = "bin2s",
