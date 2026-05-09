@@ -1,109 +1,74 @@
 ---
 name: code-test
-description: Run tests to validate changes. Prefer the smallest relevant scope. Use after checks pass and when behavior changes warrant testing.
+description: Run cargo tests for the nx-std/tools workspace after format/check/clippy are green. Prefer the smallest relevant scope (per-crate). Use after behavior changes to validate, before commits/PRs, or when user mentions tests.
+allowed-tools: "Bash(just test:*), Bash(just test-crate:*)"
 ---
 
 # Code Testing Skill
 
-This skill provides testing operations for the tools workspace (cargo-nx + netloader). Uses cargo-nextest when available, with `cargo test` fallback.
+Runs the cargo test suite for the `nx-std/tools` Rust workspace (`cargo-nx`, `netloader`).
 
-## When to Use This Skill
+These are **host tests** — they compile and run on the development machine via `cargo test` (or `cargo nextest` if installed). There is no cross-compilation, no Switch hardware involved.
 
-Use this skill when you need to:
-- Validate behavior changes or bug fixes
-- Run tests for specific crates or the whole workspace
-- Respond to a user request to run tests
+## Prerequisite
 
-## Test Scope Selection (Default: Minimal)
+**`/code-format` and `/code-check` must be green first.** If dirty, return there — compile/clippy issues are faster to surface than a test run.
 
-Start with the smallest scope that covers the change. Only broaden if you need more confidence.
+## Scope Selection
 
-- Docs/comments-only changes: skip tests and state why
-- Localized code change in 1 crate: run `just test-crate <crate>`
-- Cross-cutting changes affecting both crates: run `just test`
+Prefer the smallest scope relevant to the change.
+
+| Blast radius                                                       | Action                              |
+|--------------------------------------------------------------------|-------------------------------------|
+| None (docs/comments only)                                          | Skip; state why                     |
+| Single-crate behavior change                                       | `just test-crate <CRATE>`           |
+| Cross-crate change (workspace `Cargo.toml`, both crates edited)    | `just test`                         |
+| Public API change in `netloader` (consumed by `cargo-nx`)          | `just test`                         |
+
+**Crate derivation.** Map edited file paths to crates: `cargo-nx/` → `cargo-nx`, `netloader/` → `netloader`.
 
 ## Available Commands
 
-### Run All Tests
+### Run Workspace Tests
 ```bash
 just test [EXTRA_FLAGS]
 ```
-Runs all tests in the workspace. Uses `cargo nextest run --workspace` if nextest is installed, falls back to `cargo test --workspace` with a warning.
+Runs all tests in the workspace. Uses `cargo nextest run --workspace` when `cargo-nextest` is installed; otherwise falls back to `cargo test --workspace`.
 
-Examples:
-- `just test` - run all tests
-- `just test -- --nocapture` - run with output visible
-
-### Run Tests for Specific Crate
+### Run Tests for a Specific Crate
 ```bash
 just test-crate <CRATE> [EXTRA_FLAGS]
 ```
-Runs tests for a specific crate. Uses `cargo nextest run --package <CRATE>` if nextest is installed, falls back to `cargo test --package <CRATE>` with a warning.
+Runs tests only for the specified crate. **Default command** unless a workspace signal fires.
 
 Examples:
-- `just test-crate cargo-nx` - run cargo-nx tests
-- `just test-crate netloader` - run netloader tests
-- `just test-crate netloader -- test_name` - run specific test
+- `just test-crate cargo-nx`
+- `just test-crate netloader`
+- `just test-crate cargo-nx -- some_test_name` — run a single test
 
-## Important Guidelines
+## Workflow
 
-### Test After Checks Pass
-Only run tests after compilation and clippy checks pass. There is no point testing code that doesn't compile.
+1. Ensure `/code-format` and `/code-check` are green.
+2. Pick scope — per-crate by default; workspace only on cross-crate signal.
+3. Run the command.
+4. On failure: read the test output, fix the regression, re-run. Do **not** mark the task complete until tests pass.
+5. Report: which scope, pass/fail counts, and any tests intentionally skipped (with reason).
 
-### All Tests Run Locally
-Unlike projects with external dependencies, all tests in this workspace run locally with no special setup required.
+## Anti-patterns
 
-### Example Workflow
-
-**Single crate change:**
-1. Edit files in `netloader`
-2. Format: use `/code-fmt` skill
-3. Check and lint: use `/code-check` skill
-4. **Run tests**: `just test-crate netloader`
-   - If failures: fix, return to step 2
-
-**Cross-cutting change:**
-1. Edit files in both crates
-2. Format: use `/code-fmt` skill
-3. Check and lint: use `/code-check` skill
-4. **Run tests**: `just test`
-   - If failures: fix, return to step 2
-
-## Common Mistakes to Avoid
-
-### Anti-patterns
-- **Never run `cargo test` or `cargo nextest` directly** - Use justfile tasks
-- **Never skip tests when behavior changes** - Only skip for docs/comments-only changes
-- **Never ignore failing tests** - Fix them or document why they fail
-
-### Best Practices
-- Run the smallest relevant test scope
-- Fix failing tests immediately
-- Run tests for behavior changes or bug fixes
+- Running tests before `/code-check` is green.
+- Running `cargo test` directly — use `just test` / `just test-crate` so cargo-nextest is preferred when available.
+- Defaulting to the workspace command when only one crate changed.
+- Marking a task complete with failing or unrun tests for changed behavior.
 
 ## Pre-approved Commands
+
 These commands can run without user permission:
-- `just test` - Safe, read-only test execution
-- `just test-crate <crate>` - Safe, read-only test execution
+- `just test` — workspace tests, read-only.
+- `just test-crate <crate>` — per-crate tests, read-only.
 
-## Validation Loop Pattern
+## Related Skills
 
-```
-Code Change -> Format -> Check -> Clippy -> Tests (when needed)
-                 ^                             |
-                 +---- Fix failures -----------+
-```
-
-If tests fail:
-1. Read error messages carefully
-2. Fix the issue
-3. Format the fix (`just fmt`)
-4. Check compilation (`just check-crate <crate>`)
-5. Re-run the relevant tests (same scope as before)
-6. Repeat until all pass
-
-## Next Steps
-
-After tests pass:
-1. **Review changes** - Ensure quality before commits
-2. **Commit** - All checks and tests must be green
+- `/code-format` — Format before testing.
+- `/code-check` — Must be green before running this skill.
+- `/code-review` — Higher-level review against guidelines.
