@@ -45,6 +45,9 @@ fn main() {
             ToolSubcommand::Npdmtool(args) => {
                 cmd::tool::npdmtool::handle_subcommand(args).map_err(|err| err.to_string())
             }
+            ToolSubcommand::Nacptool(args) => {
+                cmd::tool::nacptool::handle_subcommand(args).map_err(|err| err.to_string())
+            }
         },
     };
 

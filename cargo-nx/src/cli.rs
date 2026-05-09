@@ -47,4 +47,6 @@ pub enum ToolSubcommand {
     BuildRomfs(cmd::tool::build_romfs::Args),
     #[command(about = "Convert JSON metadata to NPDM format")]
     Npdmtool(cmd::tool::npdmtool::Args),
+    #[command(about = "Create or manipulate NACP files")]
+    Nacptool(cmd::tool::nacptool::Args),
 }
