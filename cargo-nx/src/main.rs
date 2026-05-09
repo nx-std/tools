@@ -42,6 +42,9 @@ fn main() {
             ToolSubcommand::BuildRomfs(args) => {
                 cmd::tool::build_romfs::handle_subcommand(args).map_err(|err| err.to_string())
             }
+            ToolSubcommand::Npdmtool(args) => {
+                cmd::tool::npdmtool::handle_subcommand(args).map_err(|err| err.to_string())
+            }
         },
     };
 

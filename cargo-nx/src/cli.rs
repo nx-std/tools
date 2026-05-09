@@ -45,4 +45,6 @@ pub enum ToolSubcommand {
     BuildPfs0(cmd::tool::build_pfs0::Args),
     #[command(name = "build_romfs", about = "Build a RomFS image from a directory")]
     BuildRomfs(cmd::tool::build_romfs::Args),
+    #[command(about = "Convert JSON metadata to NPDM format")]
+    Npdmtool(cmd::tool::npdmtool::Args),
 }
