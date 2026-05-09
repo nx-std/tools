@@ -1,7 +1,7 @@
 ---
 name: code-check
 description: Validate and lint Rust code after changes in the nx-std/tools workspace. Use after editing .rs files, when user mentions compilation errors, type checking, linting, clippy warnings, or before commits/PRs. Prefers IDE/rust-analyzer diagnostics when available, defaults to per-crate `just` commands, and auto-fixes clippy lints with `--fix`.
-allowed-tools: "Bash(just check:*), Bash(just check-crate:*), Bash(just clippy:*), Bash(just clippy-crate:*), mcp__ide__getDiagnostics, LSP"
+allowed-tools: "Bash(just check:*), Bash(just check-rs:*), Bash(just check-crate:*), Bash(just clippy:*), Bash(just clippy-crate:*), Bash(just check-unused-deps:*), Bash(just check-deps:*), mcp__ide__getDiagnostics, LSP"
 ---
 
 # Code Checking Skill
@@ -22,11 +22,11 @@ Run the stages in order. Move to the next stage only after the current one is cl
 ```
 Stage 0 (optional)                   Stage 1 — mandatory             Stage 2 — mandatory
 rust-analyzer-lsp diagnostics   →    just check-crate (per crate) →  just clippy-crate --fix … (per crate)
-(via mcp__ide__getDiagnostics)       ↑ escalate to just check only   ↑ escalate to just clippy --fix only
-                                       on blast-radius signals          on blast-radius signals
+(via mcp__ide__getDiagnostics)       ↑ escalate to just check-rs     ↑ escalate to just clippy --fix only
+                                       only on blast-radius signals     on blast-radius signals
 ```
 
-**Default to per-crate.** Iterate over edited crates — do not collapse them into a workspace command. `just check` / `just clippy` compile every crate in the workspace and are only faster when a blast-radius signal fires.
+**Default to per-crate.** Iterate over edited crates — do not collapse them into a workspace command. `just check-rs` / `just clippy` compile every crate in the workspace and are only faster when a blast-radius signal fires.
 
 **Crate derivation.** Map edited file paths to crates by reading the nearest enclosing `Cargo.toml`. The two crates live at `cargo-nx/` and `netloader/`. Include every edited crate.
 
@@ -59,9 +59,9 @@ Stage 0 reads diagnostics rust-analyzer has already computed in the background. 
 
 ### Check Rust Code (Workspace)
 ```bash
-just check [EXTRA_FLAGS]
+just check-rs [EXTRA_FLAGS]
 ```
-Checks all Rust code (`cargo check --all-targets`). Use only when a blast-radius signal fires.
+Checks all Rust code (`cargo check --all-targets`). Use only when a blast-radius signal fires. **Alias:** `just check`.
 
 ### Check Specific Crate
 ```bash
@@ -136,7 +136,7 @@ Edit in `Cargo.toml` adding a workspace dependency used by both crates. Cargo ma
 1. Format changes: use `/code-format`.
 2. **Stage 0** — probe `mcp__ide__getDiagnostics`; fix surfaced issues.
 3. **Stage 1 (escalated)** — workspace check:
-   - `just check` → fix errors in any crate that broke → repeat until clean.
+   - `just check-rs` → fix errors in any crate that broke → repeat until clean.
 4. **Stage 2 (escalated)** — workspace clippy auto-fix:
    - `just clippy --fix --allow-dirty --allow-staged`
    - If warnings remain: `just clippy` (no `--fix`), hand-fix.
@@ -146,9 +146,9 @@ Edit in `Cargo.toml` adding a workspace dependency used by both crates. Cargo ma
 ## Common Mistakes to Avoid
 
 ### Anti-patterns
-- **Never run `cargo check` directly** — use `just check-crate` or `just check`.
+- **Never run `cargo check` directly** — use `just check-crate` or `just check-rs`.
 - **Never run `cargo clippy` directly** — the justfile recipes add proper flags like `--no-deps` and `--all-targets`.
-- **Never default to `just check` / `just clippy` for convenience** — workspace commands compile every crate. Use only when a blast-radius signal fires.
+- **Never default to `just check-rs` / `just clippy` for convenience** — workspace commands compile every crate. Use only when a blast-radius signal fires.
 - **Never skip Stage 1 just because Stage 0 is clean** — rust-analyzer may be stale.
 - **Never run clippy without `--fix` on the first pass** — wastes cycles on machine-applicable lints.
 - **Never pass `--fix` without `--allow-dirty --allow-staged`** — cargo refuses to modify files in a dirty tree.
@@ -166,7 +166,8 @@ Edit in `Cargo.toml` adding a workspace dependency used by both crates. Cargo ma
 These commands can run without user permission:
 - `mcp__ide__getDiagnostics` — read-only.
 - `LSP` tool operations against `.rs` files — read-only.
-- `just check`, `just check-crate <crate>` — safe, read-only.
+- `just check-rs` (alias `just check`), `just check-crate <crate>` — safe, read-only.
+- `just check-unused-deps` (alias `just check-deps`) — runs `cargo machete`; read-only.
 - `just clippy`, `just clippy-crate <crate>` — safe, read-only.
 - `just clippy --fix --allow-dirty --allow-staged` and `just clippy-crate <crate> --fix --allow-dirty --allow-staged` — auto-apply of machine-applicable fixes; affects only source files already being edited.
 
