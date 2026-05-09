@@ -41,4 +41,6 @@ pub enum ToolSubcommand {
     Elf2nso(cmd::tool::elf2nso::Args),
     #[command(about = "Convert an ELF file to KIP format")]
     Elf2kip(cmd::tool::elf2kip::Args),
+    #[command(name = "build_pfs0", about = "Build a PFS0 archive from a directory")]
+    BuildPfs0(cmd::tool::build_pfs0::Args),
 }

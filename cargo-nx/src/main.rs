@@ -36,6 +36,9 @@ fn main() {
             ToolSubcommand::Elf2kip(args) => {
                 cmd::tool::elf2kip::handle_subcommand(args).map_err(|err| err.to_string())
             }
+            ToolSubcommand::BuildPfs0(args) => {
+                cmd::tool::build_pfs0::handle_subcommand(args).map_err(|err| err.to_string())
+            }
         },
     };
 
