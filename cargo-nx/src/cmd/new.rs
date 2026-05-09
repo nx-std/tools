@@ -15,37 +15,18 @@ const DEFAULT_EDITION: &str = "2024";
 /// Which package type to use by default
 const DEFAULT_PACKAGE_TYPE: &str = "nro";
 
-const DEFAULT_LIB_CARGO_TOML: &str = include_str!("../default/lib/Cargo.toml");
-const DEFAULT_LIB_CARGO_CONFIG_TOML: &str = include_str!("../default/lib/.cargo/config.toml");
+const DEFAULT_LIB_CARGO_TOML: &str = include_str!("../../default/lib/Cargo.toml");
+const DEFAULT_LIB_CARGO_CONFIG_TOML: &str = include_str!("../../default/lib/.cargo/config.toml");
 
-const DEFAULT_LIB_SRC_LIB_RS: &str = include_str!("../default/lib/src/lib.rs");
-const DEFAULT_NRO_CARGO_TOML: &str = include_str!("../default/nro/Cargo.toml");
-const DEFAULT_NRO_CARGO_CONFIG_TOML: &str = include_str!("../default/nro/.cargo/config.toml");
+const DEFAULT_LIB_SRC_LIB_RS: &str = include_str!("../../default/lib/src/lib.rs");
+const DEFAULT_NRO_CARGO_TOML: &str = include_str!("../../default/nro/Cargo.toml");
+const DEFAULT_NRO_CARGO_CONFIG_TOML: &str = include_str!("../../default/nro/.cargo/config.toml");
 
-const DEFAULT_NRO_SRC_MAIN_RS: &str = include_str!("../default/nro/src/main.rs");
-const DEFAULT_NSP_CARGO_TOML: &str = include_str!("../default/nsp/Cargo.toml");
-const DEFAULT_NSP_CARGO_CONFIG_TOML: &str = include_str!("../default/nsp/.cargo/config.toml");
+const DEFAULT_NRO_SRC_MAIN_RS: &str = include_str!("../../default/nro/src/main.rs");
+const DEFAULT_NSP_CARGO_TOML: &str = include_str!("../../default/nsp/Cargo.toml");
+const DEFAULT_NSP_CARGO_CONFIG_TOML: &str = include_str!("../../default/nsp/.cargo/config.toml");
 
-const DEFAULT_NSP_SRC_MAIN_RS: &str = include_str!("../default/nsp/src/main.rs");
-
-/// The `new` subcommand CLI arguments.
-#[derive(clap::Args)]
-pub struct Args {
-    /// Select the package type that will be built by this project.
-    #[arg(short = 't', long = "type", value_enum, default_value = DEFAULT_PACKAGE_TYPE)]
-    pub kind: PackageKind,
-    /// Set the Rust edition to use.
-    #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(SUPPORTED_EDITIONS), default_value = DEFAULT_EDITION
-    )]
-    pub edition: String,
-    /// Set the name of the newly created package.
-    /// The path directory name is used by default.
-    #[arg(short, long)]
-    pub name: Option<String>,
-    /// The path where the new package will be created
-    #[arg(value_parser, value_name = "DIR")]
-    pub path: PathBuf,
-}
+const DEFAULT_NSP_SRC_MAIN_RS: &str = include_str!("../../default/nsp/src/main.rs");
 
 /// Handle the `new` subcommand.
 pub fn handle_subcommand(args: Args) {
@@ -118,24 +99,23 @@ pub fn handle_subcommand(args: Args) {
     println!("Created `{}` package ({})", info.name, args.kind);
 }
 
-#[derive(Debug, Default)]
-struct PackageInfo<'a> {
-    name: &'a str,
-    author: &'a str,
-    version: &'a str,
-    edition: u16,
-    program_id: u64,
-}
-
-fn process_default_file(file: &str, replace_info: &PackageInfo<'_>) -> String {
-    file.replace("<name>", replace_info.name)
-        .replace("<author>", replace_info.author)
-        .replace("<version>", replace_info.version)
-        .replace("<edition>", format!("{}", replace_info.edition).as_str())
-        .replace(
-            "<program_id>",
-            format!("0x{:016X}", replace_info.program_id).as_str(),
-        )
+/// The `new` subcommand CLI arguments.
+#[derive(clap::Args)]
+pub struct Args {
+    /// Select the package type that will be built by this project.
+    #[arg(short = 't', long = "type", value_enum, default_value = DEFAULT_PACKAGE_TYPE)]
+    pub kind: PackageKind,
+    /// Set the Rust edition to use.
+    #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(SUPPORTED_EDITIONS), default_value = DEFAULT_EDITION
+    )]
+    pub edition: String,
+    /// Set the name of the newly created package.
+    /// The path directory name is used by default.
+    #[arg(short, long)]
+    pub name: Option<String>,
+    /// The path where the new package will be created
+    #[arg(value_parser, value_name = "DIR")]
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Copy, Clone, clap::ValueEnum)]
@@ -156,4 +136,24 @@ impl fmt::Display for PackageKind {
 
         write!(f, "{}", fmt_str)
     }
+}
+
+#[derive(Debug, Default)]
+struct PackageInfo<'a> {
+    name: &'a str,
+    author: &'a str,
+    version: &'a str,
+    edition: u16,
+    program_id: u64,
+}
+
+fn process_default_file(file: &str, replace_info: &PackageInfo<'_>) -> String {
+    file.replace("<name>", replace_info.name)
+        .replace("<author>", replace_info.author)
+        .replace("<version>", replace_info.version)
+        .replace("<edition>", format!("{}", replace_info.edition).as_str())
+        .replace(
+            "<program_id>",
+            format!("0x{:016X}", replace_info.program_id).as_str(),
+        )
 }

@@ -48,6 +48,66 @@ cargo nx link [options] <file.nro> [-- <nro args...>]
 
 Options: `-a <ip>` (address), `-r <n>` (discovery retries), `-p <path>` (upload path), `-s` (start stdio server after transfer).
 
+**Note:** This command provides the same functionality as the standalone `nxlink` tool from devkitPro.
+
+#### Low-Level Tool Subcommands
+
+`cargo-nx` also exposes the following low-level packaging and conversion tools, providing Rust implementations of utilities traditionally found in devkitPro's `switch-tools`:
+
+**`elf2nro`** -- Convert an ELF executable to NRO (Nintendo Relocatable Object) format.
+
+```
+cargo nx elf2nro <elf-file> <nro-file> [options]
+```
+
+Options: `--icon=<iconpath>`, `--nacp=<control.nacp>`, `--romfs=<image>`, `--romfsdir=<directory>`, `--alignedheader`.
+
+**`elf2nso`** -- Convert an ELF executable to NSO (Nintendo Shared Object) format.
+
+```
+cargo nx elf2nso <elf-file> <nso-file>
+```
+
+**`elf2kip`** -- Convert an ELF executable to KIP (Kernel Initial Process) format.
+
+```
+cargo nx elf2kip <elf-file> <json-file> <kip-file>
+```
+
+**`build_pfs0`** -- Build a PFS0 (Partition FileSystem) archive from a directory.
+
+```
+cargo nx build_pfs0 <in-directory> <out-pfs0-filepath>
+```
+
+**`build_romfs`** -- Build a RomFS (Read-Only Memory FileSystem) image from a directory.
+
+```
+cargo nx build_romfs <in-directory> <out-romfs-filepath>
+```
+
+**`nacptool`** -- Create NACP (Nintendo Application Control Property) metadata files.
+
+```
+cargo nx nacptool --create <name> <author> <version> <outfile> [options]
+```
+
+Options: `--titleid=<titleID>`.
+
+**Note:** The `--titleid` option requires exactly 16 hexadecimal digits (e.g., `0100000000000000`). This is stricter than the original C implementation, which accepts variable-length hex strings.
+
+**`npdmtool`** -- Generate NPDM (Nintendo Program Description Metadata) files from JSON specifications.
+
+```
+cargo nx npdmtool <json-file> <npdm-file>
+```
+
+#### Intentional Behavior Differences
+
+The Rust implementations aim for practical compatibility with the original C tools from `switch-tools`, but include the following intentional differences:
+
+- **`nacptool --titleid` validation**: Requires exactly 16 hexadecimal digits, rejecting shorter or invalid inputs that the C version would parse using `scanf`'s `%016llx` format specifier.
+
 For detailed package format documentation (NRO/NACP fields, NSP/NPDM configuration), see [`cargo-nx/README.md`](cargo-nx/README.md).
 
 ### netloader

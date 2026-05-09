@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "cargo-nx",
     "netloader",
+    "nx-object",
 ]
 
 [workspace.dependencies]

@@ -335,6 +335,10 @@ Edit File → /code-format skill
 
 **ALL AI agents MUST follow these principles:**
 
+- **Consistency and homogeneity are fundamental**: The codebase must read as if written by a single author. All new code
+  must match the style, structure, and conventions of the surrounding code. Deviating from an established pattern requires
+  strong, explicit justification — "I prefer it this way" is not sufficient. If you believe a pattern should change, propose
+  the change to the pattern documentation first; do not introduce one-off divergences.
 - **Research → Plan → Implement**: Never jump straight to coding
 - **Guidelines before planning**: `/code-guidelines` is a prerequisite for both planning AND Plan mode, not just implementation. A plan written without loaded guidelines is considered incomplete.
 - **Guideline compliance**: Follow guidelines from [Code Guidelines](#2-code-guidelines)

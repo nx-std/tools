@@ -13,8 +13,8 @@ cargo_metadata = { version = "0.23" }
 chrono = "0.4"
 cipher = "0.5"
 clap = { version = "4", features = ["derive"] }
-linkle = { git = "https://github.com/XorTroll/linkle", branch = "npdm" }
 netloader = { version = "0.1.0", path = "../netloader" }
+nx-object = { version = "0.1.0", path = "../nx-object", features = ["elf", "lz4", "blz"] }
 num-bigint = "0.4"
 serde = "1"
 serde_derive = "1"

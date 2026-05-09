@@ -14,32 +14,6 @@ use std::{
 
 use netloader::loader::send::send_nro_file;
 
-/// The `link` subcommand CLI arguments.
-#[derive(clap::Args)]
-pub struct Args {
-    /// The IP address of the netloader server.
-    #[arg(short, long, value_parser)]
-    pub address: Option<IpAddr>,
-    /// The number of times to retry server discovery.
-    #[arg(short, long, default_value_t = 10)]
-    pub retries: u32,
-    /// Set upload path for the file.
-    #[arg(short, long, value_parser)]
-    pub path: Option<PathBuf>,
-    /// Extra arguments to pass to the NRO file.
-    #[arg(long = "args", value_name = "ARGS")]
-    pub extra_args: Option<String>,
-    /// Start the nxLink stdio server after a successful file transfer.
-    #[arg(short, long, action)]
-    pub server: bool,
-    /// NRO file to send to the netloader server.
-    #[arg(value_name = "FILE", value_parser)]
-    pub nro_file: PathBuf,
-    /// Args to send to NRO
-    #[arg(value_name = "ARGS", value_parser)]
-    pub nro_args: Vec<String>,
-}
-
 /// Handle the `link` subcommand.
 #[tokio::main(flavor = "current_thread")]
 pub async fn handle_subcommand(
@@ -186,6 +160,32 @@ pub async fn handle_subcommand(
             _ = tokio::signal::ctrl_c() => {}
         }
     }
+}
+
+/// The `link` subcommand CLI arguments.
+#[derive(clap::Args)]
+pub struct Args {
+    /// The IP address of the netloader server.
+    #[arg(short, long, value_parser)]
+    pub address: Option<IpAddr>,
+    /// The number of times to retry server discovery.
+    #[arg(short, long, default_value_t = 10)]
+    pub retries: u32,
+    /// Set upload path for the file.
+    #[arg(short, long, value_parser)]
+    pub path: Option<PathBuf>,
+    /// Extra arguments to pass to the NRO file.
+    #[arg(long = "args", value_name = "ARGS")]
+    pub extra_args: Option<String>,
+    /// Start the nxLink stdio server after a successful file transfer.
+    #[arg(short, long, action)]
+    pub server: bool,
+    /// NRO file to send to the netloader server.
+    #[arg(value_name = "FILE", value_parser)]
+    pub nro_file: PathBuf,
+    /// Args to send to NRO
+    #[arg(value_name = "ARGS", value_parser)]
+    pub nro_args: Vec<String>,
 }
 
 /// Parse the extra arguments CLI string into a vector of arguments.
