@@ -48,6 +48,12 @@ fn main() {
             ToolSubcommand::Nacptool(args) => {
                 cmd::tool::nacptool::handle_subcommand(args).map_err(|err| err.to_string())
             }
+            ToolSubcommand::Bin2s(args) => {
+                cmd::tool::bin2s::handle_subcommand(args).map_err(|err| err.to_string())
+            }
+            ToolSubcommand::Bin2c(args) => {
+                cmd::tool::bin2c::handle_subcommand(args).map_err(|err| err.to_string())
+            }
         },
     };
 

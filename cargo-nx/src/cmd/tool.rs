@@ -1,3 +1,7 @@
+mod identifier;
+
+pub mod bin2c;
+pub mod bin2s;
 pub mod build_pfs0;
 pub mod build_romfs;
 pub mod elf2kip;

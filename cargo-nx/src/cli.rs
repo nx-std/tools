@@ -49,4 +49,17 @@ pub enum ToolSubcommand {
     Npdmtool(cmd::tool::npdmtool::Args),
     #[command(about = "Create or manipulate NACP files")]
     Nacptool(cmd::tool::nacptool::Args),
+    #[command(
+        name = "bin2s",
+        about = "Convert binary files to GAS assembly source",
+        after_help = include_str!("cmd/tool/bin2s__after_help.md")
+    )]
+    Bin2s(cmd::tool::bin2s::Args),
+    #[command(
+        name = "bin2c",
+        alias = "raw2c",
+        about = "Convert binary files to C source",
+        after_help = include_str!("cmd/tool/bin2c__after_help.md")
+    )]
+    Bin2c(cmd::tool::bin2c::Args),
 }
