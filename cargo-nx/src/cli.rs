@@ -39,4 +39,6 @@ pub enum ToolSubcommand {
     Elf2nro(cmd::tool::elf2nro::Args),
     #[command(about = "Convert an ELF file to NSO format")]
     Elf2nso(cmd::tool::elf2nso::Args),
+    #[command(about = "Convert an ELF file to KIP format")]
+    Elf2kip(cmd::tool::elf2kip::Args),
 }

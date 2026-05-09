@@ -33,6 +33,9 @@ fn main() {
             ToolSubcommand::Elf2nso(args) => {
                 cmd::tool::elf2nso::handle_subcommand(args).map_err(|err| err.to_string())
             }
+            ToolSubcommand::Elf2kip(args) => {
+                cmd::tool::elf2kip::handle_subcommand(args).map_err(|err| err.to_string())
+            }
         },
     };
 
