@@ -4,6 +4,7 @@ use tracing_subscriber::EnvFilter;
 
 mod cli;
 mod cmd;
+mod pack;
 
 fn main() {
     // Set up the logger
@@ -21,6 +22,9 @@ fn main() {
         CargoNxSubcommand::Build(args) => {
             cmd::build::handle_subcommand(args);
             Ok(())
+        }
+        CargoNxSubcommand::Bundle(args) => {
+            cmd::bundle::handle_subcommand(args).map_err(|err| err.to_string())
         }
         CargoNxSubcommand::Link(args) => {
             cmd::link::handle_subcommand(args);

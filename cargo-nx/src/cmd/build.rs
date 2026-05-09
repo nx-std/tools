@@ -6,12 +6,11 @@ use std::{
 
 use cargo_metadata::{Artifact, Message, MetadataCommand, Package};
 use nx_object::{
-    elf::ElfSegments,
     read::SetLanguage,
-    write::{NacpBuilder, Pfs0Builder, RomFsBuilder, npdm::NpdmBuilder},
+    write::{NacpBuilder, RomFsBuilder},
 };
 
-use crate::cmd::tool::npdmtool::{parse_npdm_json, parse_npdm_json_value};
+use crate::pack;
 
 /// The default target triple to use when building.
 const DEFAULT_TARGET_TRIPLE: &str = "aarch64-nintendo-switch-freestanding";
@@ -307,40 +306,37 @@ fn handle_nro_format(root: &Path, artifact: &Artifact, metadata: NroMetadata) {
     // Read ELF file
     let elf_data = std::fs::read(elf.as_std_path()).expect("Failed to read ELF file");
 
-    // Parse ELF segments
-    let segments = ElfSegments::parse(&elf_data).expect("Failed to parse ELF segments");
-
-    // Build NRO using nx-object
-    let mut nro_builder = segments.into_nro_builder();
-
-    // Add RomFS if specified
-    if let Some(romfs_dir) = metadata.romfs.as_ref() {
+    // Build RomFS bytes if a directory is specified
+    let romfs_bytes = metadata.romfs.as_ref().map(|romfs_dir| {
         let romfs_path = root.join(romfs_dir);
-        let romfs_builder = RomFsBuilder::from_directory(&romfs_path)
-            .expect("Failed to build RomFS from directory");
-        let romfs_data = romfs_builder.build().expect("Failed to build RomFS");
-        nro_builder = nro_builder.asset_romfs(romfs_data);
-    }
+        RomFsBuilder::from_directory(&romfs_path)
+            .expect("Failed to build RomFS from directory")
+            .build()
+            .expect("Failed to build RomFS")
+    });
 
-    // Add icon (either user-provided or default)
-    let icon_data = if let Some(icon_file) = metadata.icon.as_ref() {
+    // Resolve icon (user-provided or default)
+    let icon_bytes = if let Some(icon_file) = metadata.icon.as_ref() {
         let icon_path = root.join(icon_file);
         std::fs::read(icon_path).expect("Failed to read icon file")
     } else {
         DEFAULT_NRO_ICON.to_vec()
     };
-    nro_builder = nro_builder.asset_icon(icon_data);
 
-    // Add NACP if specified
-    if let Some(nacp_metadata) = metadata.nacp {
-        // Convert NacpMetadata to NacpBuilder and serialize via nx-object
-        let nacp_data =
-            build_nacp_from_metadata(&nacp_metadata).expect("Failed to build NACP from metadata");
-        nro_builder = nro_builder.asset_nacp(nacp_data);
-    }
+    // Build NACP if specified
+    let nacp_bytes = metadata.nacp.as_ref().map(|nacp_metadata| {
+        build_nacp_from_metadata(nacp_metadata).expect("Failed to build NACP from metadata")
+    });
 
-    // Build NRO
-    let nro_data = nro_builder.build().expect("Failed to build NRO");
+    let nro_data = pack::nro::build_nro(
+        &elf_data,
+        pack::nro::NroAssets {
+            icon: Some(icon_bytes),
+            nacp: nacp_bytes,
+            romfs: romfs_bytes,
+        },
+    )
+    .expect("Failed to build NRO");
 
     // Write NRO file
     std::fs::write(nro.as_path(), nro_data).expect("Failed to write NRO file");
@@ -350,51 +346,26 @@ fn handle_nro_format(root: &Path, artifact: &Artifact, metadata: NroMetadata) {
 
 fn handle_nsp_format(root: &Path, artifact: &Artifact, metadata: NspMetadata) {
     let elf = artifact.filenames[0].clone();
-
-    let output_path = elf.parent().unwrap();
-    let exefs_dir = output_path.join("exefs");
-    let _ = std::fs::remove_dir_all(exefs_dir.clone());
-    std::fs::create_dir(exefs_dir.clone()).unwrap();
-
-    let main_npdm = exefs_dir.join("main.npdm");
-    let main_exe = exefs_dir.join("main");
-
     let exefs_nsp = get_output_elf_path_as(artifact, "nsp");
 
-    // Parse NPDM (either from inline TOML or external JSON file)
-    let (npdm_metadata, aci, acid) = if let Some(inline_npdm) = metadata.npdm {
-        // Convert inline NPDM to JSON format and parse in-memory (no temp file)
+    // Build NPDM bytes (from inline TOML or external JSON file)
+    let npdm_bytes = if let Some(inline_npdm) = metadata.npdm {
         let json_value = convert_inline_npdm_to_json(&inline_npdm)
             .expect("Failed to convert inline NPDM to JSON");
-        parse_npdm_json_value(&json_value).expect("Failed to parse inline NPDM")
+        pack::npdm::build_npdm_from_value(&json_value).expect("Failed to build NPDM from inline")
     } else if let Some(npdm_json) = metadata.npdm_json {
         let npdm_json_path = root.join(npdm_json);
-        parse_npdm_json(&npdm_json_path).expect("Failed to parse NPDM JSON")
+        pack::npdm::build_npdm_from_file(&npdm_json_path).expect("Failed to build NPDM from JSON")
     } else {
         panic!("No npdm or npdm_json specified in package.metadata.nx.nsp")
     };
 
-    let npdm_bytes = NpdmBuilder::new(npdm_metadata)
-        .with_aci(aci)
-        .with_acid(acid)
-        .build();
-
-    std::fs::write(&main_npdm, npdm_bytes).expect("Failed to write NPDM file");
-
-    // Read ELF file and build NSO using nx-object
+    // Build NSO from ELF
     let elf_data = std::fs::read(elf.as_std_path()).expect("Failed to read ELF file");
-    let segments = ElfSegments::parse(&elf_data).expect("Failed to parse ELF segments");
-    let nso_data = segments
-        .into_nso_builder()
-        .build()
-        .expect("Failed to build NSO");
-    std::fs::write(&main_exe, nso_data).expect("Failed to write NSO file");
+    let nso_data = pack::nso::build_nso(&elf_data).expect("Failed to build NSO");
 
-    // Build NSP (PFS0 archive) from exefs directory using nx-object
-    let nsp_data = Pfs0Builder::from_directory(exefs_dir.as_str())
-        .expect("Failed to create PFS0 builder from exefs directory")
-        .build()
-        .expect("Failed to build PFS0");
+    // Assemble NSP (PFS0) in memory
+    let nsp_data = pack::nsp::build_nsp(nso_data, npdm_bytes).expect("Failed to build NSP");
     std::fs::write(&exefs_nsp, nsp_data).expect("Failed to write NSP file");
 
     println!("Built {}", exefs_nsp.to_string_lossy());

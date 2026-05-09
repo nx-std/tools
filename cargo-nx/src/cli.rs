@@ -21,6 +21,11 @@ pub enum CargoNxSubcommand {
     New(cmd::new::Args),
     #[command(about = "Build a Rust project for the Nintendo Switch")]
     Build(cmd::build::Args),
+    #[command(
+        about = "Package a pre-built ELF as an NRO or NSP",
+        after_help = include_str!("cmd/bundle__after_help.md")
+    )]
+    Bundle(cmd::bundle::Args),
     #[command(about = "Send a file to the Nintendo Switch")]
     Link(cmd::link::Args),
     #[command(about = "Switch homebrew toolchain utilities")]
