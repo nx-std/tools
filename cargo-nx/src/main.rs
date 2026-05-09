@@ -39,6 +39,9 @@ fn main() {
             ToolSubcommand::BuildPfs0(args) => {
                 cmd::tool::build_pfs0::handle_subcommand(args).map_err(|err| err.to_string())
             }
+            ToolSubcommand::BuildRomfs(args) => {
+                cmd::tool::build_romfs::handle_subcommand(args).map_err(|err| err.to_string())
+            }
         },
     };
 

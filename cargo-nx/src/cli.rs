@@ -43,4 +43,6 @@ pub enum ToolSubcommand {
     Elf2kip(cmd::tool::elf2kip::Args),
     #[command(name = "build_pfs0", about = "Build a PFS0 archive from a directory")]
     BuildPfs0(cmd::tool::build_pfs0::Args),
+    #[command(name = "build_romfs", about = "Build a RomFS image from a directory")]
+    BuildRomfs(cmd::tool::build_romfs::Args),
 }
