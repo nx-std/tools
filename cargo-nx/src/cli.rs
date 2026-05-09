@@ -23,4 +23,18 @@ pub enum CargoNxSubcommand {
     Build(cmd::build::Args),
     #[command(about = "Send a file to the Nintendo Switch")]
     Link(cmd::link::Args),
+    #[command(about = "Switch homebrew toolchain utilities")]
+    Tool(ToolArgs),
+}
+
+#[derive(clap::Args)]
+pub struct ToolArgs {
+    #[command(subcommand)]
+    pub subcommand: ToolSubcommand,
+}
+
+#[derive(clap::Subcommand)]
+pub enum ToolSubcommand {
+    #[command(about = "Convert an ELF file to NRO format")]
+    Elf2nro(cmd::tool::elf2nro::Args),
 }

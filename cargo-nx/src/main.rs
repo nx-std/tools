@@ -1,5 +1,5 @@
 use clap::Parser as _;
-use cli::{Cargo, CargoNxSubcommand};
+use cli::{Cargo, CargoNxSubcommand, ToolSubcommand};
 use tracing_subscriber::EnvFilter;
 
 mod cli;
@@ -13,9 +13,28 @@ fn main() {
 
     // Parse the command-line arguments and handle the subcommand
     let Cargo::Nx(args) = Cargo::parse();
-    match args.subcommand {
-        CargoNxSubcommand::New(args) => cmd::new::handle_subcommand(args),
-        CargoNxSubcommand::Build(args) => cmd::build::handle_subcommand(args),
-        CargoNxSubcommand::Link(args) => cmd::link::handle_subcommand(args),
+    let result: Result<(), String> = match args.subcommand {
+        CargoNxSubcommand::New(args) => {
+            cmd::new::handle_subcommand(args);
+            Ok(())
+        }
+        CargoNxSubcommand::Build(args) => {
+            cmd::build::handle_subcommand(args);
+            Ok(())
+        }
+        CargoNxSubcommand::Link(args) => {
+            cmd::link::handle_subcommand(args);
+            Ok(())
+        }
+        CargoNxSubcommand::Tool(args) => match args.subcommand {
+            ToolSubcommand::Elf2nro(args) => {
+                cmd::tool::elf2nro::handle_subcommand(args).map_err(|err| err.to_string())
+            }
+        },
+    };
+
+    if let Err(e) = result {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
     }
 }
