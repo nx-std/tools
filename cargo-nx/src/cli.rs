@@ -37,4 +37,6 @@ pub struct ToolArgs {
 pub enum ToolSubcommand {
     #[command(about = "Convert an ELF file to NRO format")]
     Elf2nro(cmd::tool::elf2nro::Args),
+    #[command(about = "Convert an ELF file to NSO format")]
+    Elf2nso(cmd::tool::elf2nso::Args),
 }
