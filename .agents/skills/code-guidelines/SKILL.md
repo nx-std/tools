@@ -1,7 +1,7 @@
 ---
 name: code-guidelines
 description: Load relevant code guidelines based on user query or work context. Use when asking about code guidelines, standards, principles, or before implementing code in the nx-std/tools workspace.
-allowed-tools: Bash(awk *)
+allowed-tools: Bash(grep *)
 ---
 
 # Code Guideline Discovery Skill
@@ -18,7 +18,7 @@ Lazy-loads `nx-std/tools` code guideline docs from `docs/code/` based on user qu
 
 The frontmatter of all guideline docs (loaded at skill-start):
 
-!`awk '/^---$/{p=!p; print FILENAME": "$0; next} p{print FILENAME": "$0}' docs/code/*.md 2>/dev/null`
+!`grep -m 4 -E '^(name|description|type|scope):' docs/code/*.md`
 
 > **Fallback**: if the block above appears as literal text (runtime does not auto-execute dynamic context), run it yourself with the Bash tool before proceeding.
 
