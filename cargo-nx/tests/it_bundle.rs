@@ -1,10 +1,13 @@
-//! End-to-end tests for `cargo nx tool elf2nro`.
+//! End-to-end tests for `cargo nx bundle`.
 //!
 //! These tests drive the built `cargo-nx` binary the same way a user would,
-//! converting the `hello-world.elf` fixture and validating the resulting NRO
+//! packaging the `hello-world.elf` fixture as an NRO and validating the result
 //! against the `hello-world.nro` reference produced by devkitPro's `elf2nro`.
 
-use std::{path::Path, process::Command};
+use std::{
+    path::Path,
+    process::{Command, Output},
+};
 
 use tempfile::tempdir;
 
@@ -21,21 +24,22 @@ const NRO_HEADER_OFFSET: usize = 0x10;
 const NRO_SIZE_FIELD_OFFSET: usize = 0x18;
 
 #[test]
-fn elf2nro_with_elf_fixture_produces_valid_nro() {
+fn bundle_with_no_nacp_produces_valid_nro() {
     //* Given
     let workdir = tempdir().expect("should create temp working directory");
     let output = workdir.path().join("hello-world.nro");
+    let tmp_dir = workdir.path().join("bundle");
 
     //* When
-    let result = run_elf2nro(Path::new(ELF_FIXTURE), &output);
+    let result = run_bundle(Path::new(ELF_FIXTURE), &output, &tmp_dir, &["--no-nacp"]);
 
     //* Then
     assert!(
         result.status.success(),
-        "elf2nro should exit successfully, stderr: {}",
+        "bundle should exit successfully, stderr: {}",
         String::from_utf8_lossy(&result.stderr),
     );
-    let nro = std::fs::read(&output).expect("elf2nro should write the NRO output file");
+    let nro = std::fs::read(&output).expect("bundle should write the NRO output file");
     assert_eq!(
         &nro[NRO_HEADER_OFFSET..NRO_HEADER_OFFSET + 4],
         b"NRO0",
@@ -49,60 +53,67 @@ fn elf2nro_with_elf_fixture_produces_valid_nro() {
 }
 
 #[test]
-fn elf2nro_with_elf_fixture_matches_reference_nro() {
+fn bundle_with_no_nacp_matches_reference_nro() {
     //* Given
     let workdir = tempdir().expect("should create temp working directory");
     let output = workdir.path().join("hello-world.nro");
+    let tmp_dir = workdir.path().join("bundle");
     let reference = std::fs::read(NRO_FIXTURE).expect("should read the NRO reference fixture");
     // The reference appends an ASET asset trailer; the NRO proper ends at the
     // header's declared size. The entry stub (bytes 0x00..0x10) is toolchain
-    // specific, so the conversion is validated from the NRO0 header onward.
+    // specific, so the packaging is validated from the NRO0 header onward.
     let expected = &reference[NRO_HEADER_OFFSET..nro_declared_size(&reference)];
 
     //* When
-    let result = run_elf2nro(Path::new(ELF_FIXTURE), &output);
+    let result = run_bundle(Path::new(ELF_FIXTURE), &output, &tmp_dir, &["--no-nacp"]);
 
     //* Then
     assert!(
         result.status.success(),
-        "elf2nro should exit successfully, stderr: {}",
+        "bundle should exit successfully, stderr: {}",
         String::from_utf8_lossy(&result.stderr),
     );
-    let nro = std::fs::read(&output).expect("elf2nro should write the NRO output file");
+    let nro = std::fs::read(&output).expect("bundle should write the NRO output file");
     assert_eq!(
         &nro[NRO_HEADER_OFFSET..],
         expected,
-        "converted NRO header and segments should match the devkitPro reference",
+        "bundled NRO header and segments should match the devkitPro reference",
     );
 }
 
 #[test]
-fn elf2nro_with_missing_elf_file_fails() {
+fn bundle_with_missing_nacp_field_fails() {
     //* Given
     let workdir = tempdir().expect("should create temp working directory");
-    let missing_elf = workdir.path().join("does-not-exist.elf");
-    let output = workdir.path().join("out.nro");
+    let output = workdir.path().join("hello-world.nro");
+    let tmp_dir = workdir.path().join("bundle");
 
     //* When
-    let result = run_elf2nro(&missing_elf, &output);
+    // NRO mode without `--no-nacp` requires --name/--author/--version.
+    let result = run_bundle(Path::new(ELF_FIXTURE), &output, &tmp_dir, &[]);
 
     //* Then
     assert!(
         !result.status.success(),
-        "elf2nro should fail when the input ELF is missing",
+        "bundle should fail when a required NACP field is missing",
     );
     assert!(
         !output.exists(),
-        "elf2nro should not write an output file on failure",
+        "bundle should not write an output file on failure",
     );
 }
 
-/// Run the `cargo-nx` binary's `tool elf2nro` subcommand.
-fn run_elf2nro(elf: &Path, nro: &Path) -> std::process::Output {
+/// Run the `cargo-nx` binary's `bundle` subcommand in NRO mode.
+fn run_bundle(input: &Path, output: &Path, tmp_dir: &Path, extra: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_cargo-nx"))
-        .args(["nx", "tool", "elf2nro"])
-        .arg(elf)
-        .arg(nro)
+        .args(["nx", "bundle"])
+        .arg("--input")
+        .arg(input)
+        .arg("--output")
+        .arg(output)
+        .arg("--tmp-dir")
+        .arg(tmp_dir)
+        .args(extra)
         .output()
         .expect("cargo-nx binary should be executable")
 }
