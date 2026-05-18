@@ -1,159 +1,382 @@
-use std::{fmt, path::PathBuf};
+//! The `new` subcommand: scaffold a new Switch homebrew project.
+//!
+//! The subcommand is a thin proxy over `cargo new`: it delegates project
+//! creation, name validation, and VCS setup to Cargo, then patches the result
+//! with the nx-specific configuration — the `nx-std` dependency, the
+//! `[package.metadata.nx.*]` block, the `#![no_std]` crate root, and a
+//! `.cargo/config.toml` enabling `build-std`.
 
-const INITIAL_VERSION: &str = "0.1.0";
+use std::{
+    fmt, io,
+    path::{Path, PathBuf},
+    process::{Command, ExitStatus},
+};
 
-const DEFAULT_AUTHOR: &str = "nx-std authors";
+mod assets;
+pub mod manifest;
 
-const DEFAULT_PROGRAM_ID: u64 = 0x0100AAAABBBBCCCC;
+/// Handle the `new` subcommand: scaffold a new Switch homebrew project by
+/// proxying `cargo new` and patching its output with the nx configuration.
+pub fn handle_subcommand(args: Args) -> Result<(), NewError> {
+    run_cargo_new(&args)?;
 
-/// The supported Rust editions
-const SUPPORTED_EDITIONS: &[&str] = &["2015", "2018", "2021", "2024"];
+    let manifest_path = args.path.join("Cargo.toml");
+    let original =
+        std::fs::read_to_string(&manifest_path).map_err(|err| NewError::ManifestRead {
+            path: manifest_path.clone(),
+            source: err,
+        })?;
 
-/// Which Rust edition to use by default
-const DEFAULT_EDITION: &str = "2024";
+    let name = manifest::package_name(&original).map_err(|err| match err {
+        manifest::PackageNameError::Parse(source) => NewError::ManifestParse {
+            path: manifest_path.clone(),
+            source,
+        },
+        manifest::PackageNameError::Missing => NewError::ManifestName {
+            path: manifest_path.clone(),
+        },
+    })?;
 
-/// Which package type to use by default
-const DEFAULT_PACKAGE_TYPE: &str = "nro";
+    let patched = manifest::patch_manifest(&original, args.kind, &name).map_err(|err| {
+        NewError::ManifestPatch {
+            path: manifest_path.clone(),
+            source: err,
+        }
+    })?;
+    write_file(&manifest_path, &patched)?;
 
-const DEFAULT_LIB_CARGO_TOML: &str = include_str!("../../default/lib/Cargo.toml");
-const DEFAULT_LIB_CARGO_CONFIG_TOML: &str = include_str!("../../default/lib/.cargo/config.toml");
+    let crate_root = assets::crate_root(args.kind);
+    write_file(
+        &args.path.join("src").join(crate_root.file_name),
+        crate_root.source,
+    )?;
 
-const DEFAULT_LIB_SRC_LIB_RS: &str = include_str!("../../default/lib/src/lib.rs");
-const DEFAULT_NRO_CARGO_TOML: &str = include_str!("../../default/nro/Cargo.toml");
-const DEFAULT_NRO_CARGO_CONFIG_TOML: &str = include_str!("../../default/nro/.cargo/config.toml");
+    write_cargo_config(&args.path)?;
 
-const DEFAULT_NRO_SRC_MAIN_RS: &str = include_str!("../../default/nro/src/main.rs");
-const DEFAULT_NSP_CARGO_TOML: &str = include_str!("../../default/nsp/Cargo.toml");
-const DEFAULT_NSP_CARGO_CONFIG_TOML: &str = include_str!("../../default/nsp/.cargo/config.toml");
+    println!("Configured `{name}` as an nx {} package", args.kind);
+    Ok(())
+}
 
-const DEFAULT_NSP_SRC_MAIN_RS: &str = include_str!("../../default/nsp/src/main.rs");
-
-/// Handle the `new` subcommand.
-pub fn handle_subcommand(args: Args) {
-    if args.path.is_dir() {
-        panic!("Specified path already exists...");
+/// Run `cargo new` for the requested package, delegating directory creation,
+/// package-name validation, and VCS setup to Cargo.
+fn run_cargo_new(args: &Args) -> Result<(), NewError> {
+    let mut command = Command::new("cargo");
+    command.arg("new");
+    match args.kind {
+        PackageKind::Lib => {
+            command.arg("--lib");
+        }
+        PackageKind::Nro | PackageKind::Nsp => {
+            command.arg("--bin");
+        }
     }
+    command
+        .arg("--edition")
+        .arg(args.edition.as_str())
+        .arg("--vcs")
+        .arg(args.vcs.as_str());
+    if let Some(name) = &args.name {
+        command.arg("--name").arg(name);
+    }
+    command.arg(&args.path);
 
-    let name = args.name.as_deref().unwrap_or_else(|| {
-        args.path
-            .file_name()
-            .expect("path has invalid file name")
-            .to_str()
-            .expect("path file name is not valid UTF-8")
-    });
-    let edition = args
-        .edition
-        .parse::<u16>()
-        .expect("invalid edition. how did this even happen??");
-    let version = INITIAL_VERSION;
-    let author = DEFAULT_AUTHOR;
-    let program_id = DEFAULT_PROGRAM_ID;
-    let info = PackageInfo {
-        name,
-        edition,
-        version,
-        author,
-        program_id,
-    };
+    let status = command.status().map_err(NewError::CargoNewSpawn)?;
+    if !status.success() {
+        return Err(NewError::CargoNewExit { status });
+    }
+    Ok(())
+}
 
-    std::fs::create_dir_all(&args.path).expect("failed to create project directory");
+/// Write `contents` to `path`, replacing any file `cargo new` created there.
+fn write_file(path: &Path, contents: &str) -> Result<(), NewError> {
+    std::fs::write(path, contents).map_err(|err| NewError::WriteFile {
+        path: path.to_path_buf(),
+        source: err,
+    })
+}
 
-    let cargo_toml = match args.kind {
-        PackageKind::Lib => DEFAULT_LIB_CARGO_TOML,
-        PackageKind::Nro => DEFAULT_NRO_CARGO_TOML,
-        PackageKind::Nsp => DEFAULT_NSP_CARGO_TOML,
-    };
-    let cargo_config_toml = match args.kind {
-        PackageKind::Lib => DEFAULT_LIB_CARGO_CONFIG_TOML,
-        PackageKind::Nro => DEFAULT_NRO_CARGO_CONFIG_TOML,
-        PackageKind::Nsp => DEFAULT_NSP_CARGO_CONFIG_TOML,
-    };
-    let src_main_file = match args.kind {
-        PackageKind::Lib => DEFAULT_LIB_SRC_LIB_RS,
-        PackageKind::Nro => DEFAULT_NRO_SRC_MAIN_RS,
-        PackageKind::Nsp => DEFAULT_NSP_SRC_MAIN_RS,
-    };
+/// Create `.cargo/config.toml` under `root`, enabling `build-std` for the
+/// freestanding Switch target.
+fn write_cargo_config(root: &Path) -> Result<(), NewError> {
+    let dir = root.join(".cargo");
+    std::fs::create_dir_all(&dir).map_err(|err| NewError::CreateDir {
+        path: dir.clone(),
+        source: err,
+    })?;
+    write_file(&dir.join("config.toml"), assets::CARGO_CONFIG_TOML)
+}
 
-    let cargo_toml = process_default_file(cargo_toml, &info);
-    std::fs::write(args.path.join("Cargo.toml"), cargo_toml)
-        .expect("failed to create project Cargo.toml");
+/// Errors produced while scaffolding a new project with [`handle_subcommand`].
+#[derive(Debug, thiserror::Error)]
+pub enum NewError {
+    /// `cargo new` could not be launched.
+    ///
+    /// Typically the `cargo` executable is missing from `PATH`.
+    #[error("failed to run `cargo new`")]
+    CargoNewSpawn(#[source] io::Error),
 
-    let dot_cargo_path = args.path.join(".cargo");
-    std::fs::create_dir(dot_cargo_path.clone()).expect("failed to create project .cargo directory");
+    /// `cargo new` ran but exited unsuccessfully.
+    ///
+    /// `cargo new` reports the cause on its own stderr — for example a
+    /// destination that already exists or an invalid package name.
+    #[error("`cargo new` failed with {status}")]
+    CargoNewExit { status: ExitStatus },
 
-    let cargo_config_toml = process_default_file(cargo_config_toml, &info);
-    std::fs::write(dot_cargo_path.join("config.toml"), cargo_config_toml)
-        .expect("failed to write to project .cargo/config.toml");
+    /// The manifest generated by `cargo new` could not be read back.
+    #[error("failed to read generated manifest `{}`", path.display())]
+    ManifestRead {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 
-    let src_path = args.path.join("src");
-    std::fs::create_dir(&src_path).expect("failed to create project src directory");
+    /// The manifest generated by `cargo new` is not valid TOML.
+    #[error("failed to parse generated manifest `{}`", path.display())]
+    ManifestParse {
+        path: PathBuf,
+        #[source]
+        source: Box<toml_edit::TomlError>,
+    },
 
-    let main_file_path = match args.kind {
-        PackageKind::Lib => src_path.join("lib.rs"),
-        PackageKind::Nro | PackageKind::Nsp => src_path.join("main.rs"),
-    };
+    /// The manifest generated by `cargo new` has no `package.name`.
+    #[error("generated manifest `{}` has no package name", path.display())]
+    ManifestName { path: PathBuf },
 
-    let src_lib_rs = process_default_file(src_main_file, &info);
-    std::fs::write(&main_file_path, src_lib_rs).expect("failed to create project lib/main file");
+    /// The generated manifest could not be patched with the nx configuration.
+    #[error("failed to patch generated manifest `{}`", path.display())]
+    ManifestPatch {
+        path: PathBuf,
+        #[source]
+        source: manifest::PatchManifestError,
+    },
 
-    println!("Created `{}` package ({})", info.name, args.kind);
+    /// A directory required by the project layout could not be created.
+    #[error("failed to create directory `{}`", path.display())]
+    CreateDir {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    /// A generated file could not be written to disk.
+    #[error("failed to write `{}`", path.display())]
+    WriteFile {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 }
 
 /// The `new` subcommand CLI arguments.
 #[derive(clap::Args)]
 pub struct Args {
     /// Select the package type that will be built by this project.
-    #[arg(short = 't', long = "type", value_enum, default_value = DEFAULT_PACKAGE_TYPE)]
+    #[arg(short = 't', long = "type", value_enum, default_value = "nro")]
     pub kind: PackageKind,
     /// Set the Rust edition to use.
-    #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(SUPPORTED_EDITIONS), default_value = DEFAULT_EDITION
-    )]
-    pub edition: String,
+    #[arg(short, long, value_enum, default_value = "2024")]
+    pub edition: Edition,
     /// Set the name of the newly created package.
     /// The path directory name is used by default.
     #[arg(short, long)]
     pub name: Option<String>,
-    /// The path where the new package will be created
+    /// Initialize a version control system in the new package.
+    #[arg(long, value_enum, default_value = "git")]
+    pub vcs: Vcs,
+    /// The path where the new package will be created.
     #[arg(value_parser, value_name = "DIR")]
     pub path: PathBuf,
 }
 
+/// The kind of package a new project builds.
 #[derive(Debug, Copy, Clone, clap::ValueEnum)]
 #[value(rename_all = "lower")]
 pub enum PackageKind {
+    /// A library crate.
     Lib,
+    /// An executable packaged as an NRO.
     Nro,
+    /// An executable packaged as an NSP.
     Nsp,
 }
 
 impl fmt::Display for PackageKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let fmt_str = match self {
+        let text = match self {
             PackageKind::Lib => "lib",
             PackageKind::Nro => "nro",
             PackageKind::Nsp => "nsp",
         };
-
-        write!(f, "{}", fmt_str)
+        f.write_str(text)
     }
 }
 
-#[derive(Debug, Default)]
-struct PackageInfo<'a> {
-    name: &'a str,
-    author: &'a str,
-    version: &'a str,
-    edition: u16,
-    program_id: u64,
+/// A supported Rust edition.
+///
+/// Modeled as an enum so unsupported editions are unrepresentable: the CLI
+/// parser rejects any value outside this set at the boundary.
+#[derive(Debug, Copy, Clone, clap::ValueEnum)]
+pub enum Edition {
+    #[value(name = "2015")]
+    E2015,
+    #[value(name = "2018")]
+    E2018,
+    #[value(name = "2021")]
+    E2021,
+    #[value(name = "2024")]
+    E2024,
 }
 
-fn process_default_file(file: &str, replace_info: &PackageInfo<'_>) -> String {
-    file.replace("<name>", replace_info.name)
-        .replace("<author>", replace_info.author)
-        .replace("<version>", replace_info.version)
-        .replace("<edition>", format!("{}", replace_info.edition).as_str())
-        .replace(
-            "<program_id>",
-            format!("0x{:016X}", replace_info.program_id).as_str(),
-        )
+impl Edition {
+    /// The edition's calendar year, as passed to `cargo new --edition`.
+    fn as_str(self) -> &'static str {
+        match self {
+            Edition::E2015 => "2015",
+            Edition::E2018 => "2018",
+            Edition::E2021 => "2021",
+            Edition::E2024 => "2024",
+        }
+    }
+}
+
+/// The version control system to initialize in a new project.
+#[derive(Debug, Copy, Clone, clap::ValueEnum)]
+#[value(rename_all = "lower")]
+pub enum Vcs {
+    /// Initialize a git repository.
+    Git,
+    /// Do not initialize any version control system.
+    None,
+}
+
+impl Vcs {
+    /// The value passed to `cargo new --vcs`.
+    fn as_str(self) -> &'static str {
+        match self {
+            Vcs::Git => "git",
+            Vcs::None => "none",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod it_proxy {
+        use super::*;
+
+        /// Build [`Args`] for a scaffolding run with the path-derived name.
+        fn args(kind: PackageKind, vcs: Vcs, path: PathBuf) -> Args {
+            Args {
+                kind,
+                edition: Edition::E2024,
+                name: None,
+                vcs,
+                path,
+            }
+        }
+
+        #[test]
+        fn new_nro_project_writes_patched_manifest_and_sources() {
+            //* Given
+            let temp = tempfile::tempdir().expect("should create a temp directory");
+            let project = temp.path().join("nro_demo");
+
+            //* When
+            let result = handle_subcommand(args(PackageKind::Nro, Vcs::Git, project.clone()));
+
+            //* Then
+            result.expect("scaffolding an nro project should succeed");
+            let manifest = std::fs::read_to_string(project.join("Cargo.toml"))
+                .expect("the generated manifest should be readable");
+            assert!(
+                manifest.contains("nx-std"),
+                "the manifest should declare the nx-std dependency"
+            );
+            assert!(
+                manifest.contains("[package.metadata.nx.nro.nacp]"),
+                "the manifest should carry the nro nacp metadata"
+            );
+            assert!(
+                manifest.contains(r#"default_name = "nro_demo""#),
+                "the nacp default_name should match the package name"
+            );
+            let main_rs = std::fs::read_to_string(project.join("src").join("main.rs"))
+                .expect("the generated main.rs should be readable");
+            assert_eq!(
+                main_rs,
+                assets::crate_root(PackageKind::Nro).source,
+                "main.rs should be overwritten with the nx source"
+            );
+            assert!(
+                project.join(".cargo").join("config.toml").is_file(),
+                "the cargo config enabling build-std should be written"
+            );
+        }
+
+        #[test]
+        fn new_lib_project_writes_lib_rs_without_metadata() {
+            //* Given
+            let temp = tempfile::tempdir().expect("should create a temp directory");
+            let project = temp.path().join("lib_demo");
+
+            //* When
+            let result = handle_subcommand(args(PackageKind::Lib, Vcs::Git, project.clone()));
+
+            //* Then
+            result.expect("scaffolding a lib project should succeed");
+            assert!(
+                project.join("src").join("lib.rs").is_file(),
+                "a library should have a src/lib.rs"
+            );
+            let manifest = std::fs::read_to_string(project.join("Cargo.toml"))
+                .expect("the generated manifest should be readable");
+            assert!(
+                manifest.contains("nx-std"),
+                "the manifest should declare the nx-std dependency"
+            );
+            assert!(
+                !manifest.contains("[package.metadata.nx"),
+                "a library manifest should carry no nx metadata"
+            );
+        }
+
+        #[test]
+        fn new_with_vcs_none_skips_gitignore() {
+            //* Given
+            let temp = tempfile::tempdir().expect("should create a temp directory");
+            let project = temp.path().join("no_vcs_demo");
+
+            //* When
+            let result = handle_subcommand(args(PackageKind::Nro, Vcs::None, project.clone()));
+
+            //* Then
+            result.expect("scaffolding without a VCS should succeed");
+            assert!(
+                !project.join(".gitignore").exists(),
+                "no .gitignore should be created when --vcs none is used"
+            );
+        }
+
+        #[test]
+        fn new_into_populated_destination_fails() {
+            //* Given
+            let temp = tempfile::tempdir().expect("should create a temp directory");
+            let project = temp.path().join("occupied");
+            std::fs::create_dir(&project).expect("should create the destination");
+            std::fs::write(project.join("keep.txt"), "existing")
+                .expect("should populate the destination");
+
+            //* When
+            let result = handle_subcommand(args(PackageKind::Nro, Vcs::Git, project));
+
+            //* Then
+            let error = result.expect_err("scaffolding into a populated directory should fail");
+            assert!(
+                matches!(error, NewError::CargoNewExit { .. }),
+                "expected CargoNewExit, got {error:?}"
+            );
+        }
+    }
 }

@@ -116,7 +116,8 @@ pub async fn handle_subcommand(
     let remote_addr = match address {
         Some(ip_addr) => (ip_addr, nx_netloader::SERVER_PORT),
         None => {
-            match nx_netloader::loader::discovery::discover(Duration::from_millis(250), retries).await
+            match nx_netloader::loader::discovery::discover(Duration::from_millis(250), retries)
+                .await
             {
                 Ok(Some(ip_addr)) => (ip_addr, nx_netloader::SERVER_PORT),
                 Ok(None) => {

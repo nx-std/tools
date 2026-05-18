@@ -16,8 +16,7 @@ fn main() {
     let Cargo::Nx(args) = Cargo::parse();
     let result: Result<(), String> = match args.subcommand {
         CargoNxSubcommand::New(args) => {
-            cmd::new::handle_subcommand(args);
-            Ok(())
+            cmd::new::handle_subcommand(args).map_err(|err| err.to_string())
         }
         CargoNxSubcommand::Build(args) => {
             cmd::build::handle_subcommand(args);

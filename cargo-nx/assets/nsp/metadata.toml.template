@@ -1,16 +1,6 @@
-[package]
-name = "<name>"
-authors = ["<author>"]
-version = "<version>"
-edition = "<edition>"
-
-[dependencies]
-nx = { git = "https://github.com/aarch64-switch-rs/nx", features=["services"] }
-
-# For help / more information, see https://github.com/nx-std/tools
 
 [package.metadata.nx.nsp.npdm]
-name = "<name>"
+name = "unnamed"
 signature_key_generation = 0
 main_thread_stack_size = "0x20000"
 main_thread_priority = 49
@@ -24,7 +14,7 @@ disable_device_address_space_merge = false
 is_production = true
 unqualified_approval = false
 memory_region = 2
-program_id = "<program_id>"
+program_id = "0x0100AAAABBBBCCCC"
 
 [package.metadata.nx.nsp.npdm.fs_access_control]
 flags = "0xFFFFFFFFFFFFFFFF"

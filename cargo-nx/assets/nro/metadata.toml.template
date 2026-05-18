@@ -1,0 +1,6 @@
+
+[package.metadata.nx.nro.nacp]
+default_name = "unnamed"
+default_author = "nx-std authors"
+version = "0.1.0"
+application_id = "0x0100AAAABBBBCCCC"

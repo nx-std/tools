@@ -16,7 +16,10 @@ use crate::pack;
 const DEFAULT_TARGET_TRIPLE: &str = "aarch64-nintendo-switch-freestanding";
 
 /// The default icon to use when building an NRO.
-const DEFAULT_NRO_ICON: &[u8] = include_bytes!("../../default/nro/default_icon.jpg");
+const DEFAULT_NRO_ICON: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/nro/default_icon.jpg"
+));
 
 /// Handle the `build` subcommand.
 pub fn handle_subcommand(args: Args) {
