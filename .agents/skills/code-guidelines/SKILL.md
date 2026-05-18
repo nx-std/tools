@@ -50,7 +50,7 @@ Compare query/context against frontmatter fields:
 - defining error types → `errors-handling`, `errors-reporting`
 - writing tests → `test-functions`, `test-files`, `test-organization`
 - creating crates → `rust-workspace`, `rust-crate`
-- crate-specific work (e.g. `cargo-nx`, `netloader`) → matching `crate-*` guidelines (if any) + relevant core
+- crate-specific work (e.g. `cargo-nx`, `nx-netloader`) → matching `crate-*` guidelines (if any) + relevant core
 
 ### Design Principles (special case)
 

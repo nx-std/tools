@@ -6,7 +6,7 @@ allowed-tools: "Bash(just fmt:*), Bash(just fmt-rs:*), Bash(just fmt-check:*), B
 
 # Code Formatting Skill
 
-Code formatting operations for the `nx-std/tools` Rust workspace (`cargo-nx`, `netloader`).
+Code formatting operations for the `nx-std/tools` Rust workspace (`cargo-nx`, `nx-netloader`).
 
 ## When to Use This Skill
 
@@ -44,7 +44,7 @@ Format when you finish a coherent chunk of work and before running checks or com
 
 ### Example Workflow
 
-1. Edit `cargo-nx/src/...` or `netloader/src/...`.
+1. Edit `cargo-nx/src/...` or `nx-netloader/src/...`.
 2. Run `just fmt-rs`.
 3. Run `/code-check`.
 

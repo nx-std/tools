@@ -6,7 +6,7 @@ allowed-tools: "Bash(just check:*), Bash(just check-rs:*), Bash(just check-crate
 
 # Code Checking Skill
 
-Code validation and linting for the `nx-std/tools` Rust workspace (`cargo-nx`, `netloader`). Optimized for **minimum wall-clock time to first error**: cheapest signal first, per-crate over workspace whenever possible, auto-fix before hand-fix.
+Code validation and linting for the `nx-std/tools` Rust workspace (`cargo-nx`, `nx-netloader`). Optimized for **minimum wall-clock time to first error**: cheapest signal first, per-crate over workspace whenever possible, auto-fix before hand-fix.
 
 ## When to Use This Skill
 
@@ -28,7 +28,7 @@ rust-analyzer-lsp diagnostics   →    just check-crate (per crate) →  just cl
 
 **Default to per-crate.** Iterate over edited crates — do not collapse them into a workspace command. `just check-rs` / `just clippy` compile every crate in the workspace and are only faster when a blast-radius signal fires.
 
-**Crate derivation.** Map edited file paths to crates by reading the nearest enclosing `Cargo.toml`. The two crates live at `cargo-nx/` and `netloader/`. Include every edited crate.
+**Crate derivation.** Map edited file paths to crates by reading the nearest enclosing `Cargo.toml`. The two crates live at `cargo-nx/` and `nx-netloader/`. Include every edited crate.
 
 ### Blast-radius escalation (Stages 1 and 2)
 
@@ -36,8 +36,8 @@ Escalate from per-crate to workspace commands only when one of these signals is 
 
 | Signal                     | Meaning                                                                                       |
 |----------------------------|-----------------------------------------------------------------------------------------------|
-| **Cross-crate edit**       | Both `cargo-nx` and `netloader` edited (workspace command is no slower than two per-crate).   |
-| **Public API change**      | Trait signature change, removed/renamed public item, breaking type change in `netloader`.     |
+| **Cross-crate edit**       | Both `cargo-nx` and `nx-netloader` edited (workspace command is no slower than two per-crate).   |
+| **Public API change**      | Trait signature change, removed/renamed public item, breaking type change in `nx-netloader`.     |
 | **Cargo manifest change**  | Workspace `Cargo.toml`/`Cargo.lock`, or a crate's `[dependencies]`/`[features]` altered.      |
 | **Suspected dependent breakage** | Per-crate check passed but you have concrete reason to think the other crate may break. |
 
@@ -71,7 +71,7 @@ Checks one crate (`cargo check -p <CRATE> --all-targets`). **Default Stage 1 com
 
 Examples:
 - `just check-crate cargo-nx`
-- `just check-crate netloader`
+- `just check-crate nx-netloader`
 
 ### Lint Rust Code (Workspace) with Auto-fix
 ```bash
@@ -98,7 +98,7 @@ Lints one crate (`cargo clippy -p <CRATE> --all-targets --no-deps`). **Default S
 Examples:
 - `just clippy-crate cargo-nx --fix --allow-dirty --allow-staged` — standard auto-fix pass
 - `just clippy-crate cargo-nx` — residue pass after `--fix`
-- `just clippy-crate netloader --fix --allow-dirty --allow-staged`
+- `just clippy-crate nx-netloader --fix --allow-dirty --allow-staged`
 
 #### Auto-fix semantics
 

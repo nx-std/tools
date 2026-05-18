@@ -5,7 +5,7 @@ description: Review code changes for bugs, guideline violations, security, and q
 
 # Code Review Skill
 
-This skill provides comprehensive code review guidance for evaluating changes to the `nx-std/tools` workspace (`cargo-nx`, `netloader`).
+This skill provides comprehensive code review guidance for evaluating changes to the `nx-std/tools` workspace (`cargo-nx`, `nx-netloader`).
 
 ## When to Use This Skill
 
@@ -24,7 +24,7 @@ Please review this code change and provide feedback on:
 Review for memory-safety and security issues:
 - `unsafe` blocks: precondition documentation, invariant maintenance, raw pointer validity, lifetime soundness
 - Data races / unsynchronized access in `Sync`/`Send` impls
-- Network input handling in `netloader`: bounds checks, untrusted-data validation, integer overflow on length fields
+- Network input handling in `nx-netloader`: bounds checks, untrusted-data validation, integer overflow on length fields
 - Path/file handling in `cargo-nx`: path traversal, untrusted input from manifest files, command-injection in any spawned process
 - Exposed secrets or credentials in code or test data
 - Input validation at any process or network boundary
@@ -66,9 +66,9 @@ Identify panic branches that cannot be locally proven to be unreachable:
 
 Verify backwards compatibility is maintained:
 - `cargo-nx` CLI: existing flags, subcommands, and exit codes must not silently change — users script against them
-- `netloader` public API: existing functions, types, and trait signatures must not break consumers (currently only `cargo-nx`)
+- `nx-netloader` public API: existing functions, types, and trait signatures must not break consumers (currently only `cargo-nx`)
 - Cargo `[features]`: removing or renaming a feature breaks consumers
-- Network protocol compatibility with the on-device nxlink server (if `netloader` touches the wire format)
+- Network protocol compatibility with the on-device nxlink server (if `nx-netloader` touches the wire format)
 
 ### 6. Coding Guideline Violations
 

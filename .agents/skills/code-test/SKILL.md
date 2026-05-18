@@ -6,7 +6,7 @@ allowed-tools: "Bash(just test:*), Bash(just test-crate:*)"
 
 # Code Testing Skill
 
-Runs the cargo test suite for the `nx-std/tools` Rust workspace (`cargo-nx`, `netloader`).
+Runs the cargo test suite for the `nx-std/tools` Rust workspace (`cargo-nx`, `nx-netloader`).
 
 These are **host tests** — they compile and run on the development machine via `cargo test` (or `cargo nextest` if installed). There is no cross-compilation, no Switch hardware involved.
 
@@ -23,9 +23,9 @@ Prefer the smallest scope relevant to the change.
 | None (docs/comments only)                                          | Skip; state why                     |
 | Single-crate behavior change                                       | `just test-crate <CRATE>`           |
 | Cross-crate change (workspace `Cargo.toml`, both crates edited)    | `just test`                         |
-| Public API change in `netloader` (consumed by `cargo-nx`)          | `just test`                         |
+| Public API change in `nx-netloader` (consumed by `cargo-nx`)          | `just test`                         |
 
-**Crate derivation.** Map edited file paths to crates: `cargo-nx/` → `cargo-nx`, `netloader/` → `netloader`.
+**Crate derivation.** Map edited file paths to crates: `cargo-nx/` → `cargo-nx`, `nx-netloader/` → `nx-netloader`.
 
 ## Available Commands
 
@@ -43,7 +43,7 @@ Runs tests only for the specified crate. **Default command** unless a workspace 
 
 Examples:
 - `just test-crate cargo-nx`
-- `just test-crate netloader`
+- `just test-crate nx-netloader`
 - `just test-crate cargo-nx -- some_test_name` — run a single test
 
 ## Workflow

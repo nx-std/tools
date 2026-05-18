@@ -5,7 +5,7 @@
 `nx-std/tools` is a Rust workspace containing **host-targeted** development tools for Nintendo Switch homebrew:
 
 - **cargo-nx** — Cargo subcommand for creating and building Switch homebrew projects (NRO/NSP)
-- **netloader** — Library for network deployment of homebrew to a Switch console
+- **nx-netloader** — Library for network deployment of homebrew to a Switch console
 
 These are **host tools**: they compile and run on the development machine. No cross-compilation, no Meson, no devkitPro needed at build time.
 
@@ -63,7 +63,7 @@ Code guideline documentation lives in `docs/code/` with YAML frontmatter for dyn
 | **Core**           | `global`       | Fundamental coding standards (error handling, logging, modules)  |
 | **Architectural**  | `global`       | High-level patterns (workspace structure, crate layout)          |
 | **Pattern**        | `global`       | Reusable design patterns (builder, typestate)                    |
-| **Crate-specific** | `crate:<name>` | Patterns for specific crates (`cargo-nx`, `netloader`)           |
+| **Crate-specific** | `crate:<name>` | Patterns for specific crates (`cargo-nx`, `nx-netloader`)        |
 | **Meta**           | `global`       | Documentation format specifications (`docs/__meta__/`)           |
 
 ### Skill Invocation
@@ -72,7 +72,7 @@ Code guideline documentation lives in `docs/code/` with YAML frontmatter for dyn
 |-------------------------------------------------------------------|---------------------|
 | Understand code guidelines before implementing                    | `/code-guidelines`  |
 | "How should I handle errors?", "What's the pattern for X?"        | `/code-guidelines`  |
-| Load crate-specific guidelines for `cargo-nx` or `netloader`      | `/code-guidelines`  |
+| Load crate-specific guidelines for `cargo-nx` or `nx-netloader`   | `/code-guidelines`  |
 | Review code changes for guideline compliance                      | `/code-review`      |
 
 **Navigation:**
@@ -91,20 +91,12 @@ Code guideline documentation lives in `docs/code/` with YAML frontmatter for dyn
 
 ## 3. Architecture
 
-### Crates
-
-```
-nx-std/tools (workspace)
-├── cargo-nx    - Cargo subcommand: scaffolds and builds NRO/NSP projects
-└── netloader   - Library: network deploy to a Switch (used by cargo-nx)
-```
-
-`cargo-nx` depends on `netloader`; `netloader` is otherwise standalone.
+`cargo-nx` depends on `nx-netloader`; `nx-netloader` is otherwise standalone.
 
 ### What These Tools Do
 
-- **cargo-nx**: drives `cargo build` against the Switch target, packages outputs as NRO/NSP for upload, and invokes `netloader` for deployment.
-- **netloader**: implements the host side of the nxlink protocol used by Atmosphère's `nxlink` daemon to receive NROs over the network.
+- **cargo-nx**: drives `cargo build` against the Switch target, packages outputs as NRO/NSP for upload, and invokes `nx-netloader` for deployment.
+- **nx-netloader**: implements the host side of the nxlink protocol used by Atmosphère's `nxlink` daemon to receive NROs over the network.
 
 Neither crate cross-compiles to the Switch — they run on the developer's machine and orchestrate the build/deploy of *other* projects that do.
 

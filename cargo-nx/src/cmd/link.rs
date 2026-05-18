@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 
-use netloader::loader::send::send_nro_file;
+use nx_netloader::loader::send::send_nro_file;
 
 /// Handle the `link` subcommand.
 #[tokio::main(flavor = "current_thread")]
@@ -114,11 +114,11 @@ pub async fn handle_subcommand(
 
     // Determine the server IP address
     let remote_addr = match address {
-        Some(ip_addr) => (ip_addr, netloader::SERVER_PORT),
+        Some(ip_addr) => (ip_addr, nx_netloader::SERVER_PORT),
         None => {
-            match netloader::loader::discovery::discover(Duration::from_millis(250), retries).await
+            match nx_netloader::loader::discovery::discover(Duration::from_millis(250), retries).await
             {
-                Ok(Some(ip_addr)) => (ip_addr, netloader::SERVER_PORT),
+                Ok(Some(ip_addr)) => (ip_addr, nx_netloader::SERVER_PORT),
                 Ok(None) => {
                     eprintln!("No server found in the network");
                     return;
@@ -154,9 +154,9 @@ pub async fn handle_subcommand(
     if server {
         println!("Starting the nxlink stdio server. Press Ctrl+C to exit.");
 
-        let stdio_server_addr = (Ipv4Addr::UNSPECIFIED, netloader::CLIENT_PORT);
+        let stdio_server_addr = (Ipv4Addr::UNSPECIFIED, nx_netloader::CLIENT_PORT);
         tokio::select! {biased;
-            _ = netloader::stdio::start_server(stdio_server_addr) => {}
+            _ = nx_netloader::stdio::start_server(stdio_server_addr) => {}
             _ = tokio::signal::ctrl_c() => {}
         }
     }

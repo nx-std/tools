@@ -110,7 +110,7 @@ The Rust implementations aim for practical compatibility with the original C too
 
 For detailed package format documentation (NRO/NACP fields, NSP/NPDM configuration), see [`cargo-nx/README.md`](cargo-nx/README.md).
 
-### netloader
+### nx-netloader
 
 A Rust library implementing the nx-hbmenu netloader protocol for transferring NRO files to a Nintendo Switch over the network.
 
@@ -121,12 +121,3 @@ The netloader protocol has three phases:
 1. **Discovery** (UDP) -- The client broadcasts a `nxboot` ping to port 28280. The Switch responds with `bootnx` to port 28771, revealing its IP address.
 2. **Transfer** (TCP) -- The client connects to port 28280, sends the file name and size, then streams the NRO data in zlib-compressed chunks. Command-line arguments for the NRO are sent after the file data.
 3. **Stdio server** (TCP, optional) -- After transfer, the client can listen on port 28771 for stdout/stderr output redirected from the running NRO via libnx's nxlink stdio feature.
-
-#### Usage
-
-Add `netloader` as a dependency:
-
-```toml
-[dependencies]
-netloader = { git = "https://github.com/nx-std/tools" }
-```
