@@ -14,7 +14,7 @@ fn main() {
 
     // Parse the command-line arguments and dispatch to the subcommand.
     let Cargo::Nx(CargoNxArgs { subcommand }) = clap::Parser::parse();
-    let rc= match subcommand {
+    let rc = match subcommand {
         CargoNxSubcommand::New(args) => finish(cmd::new::handle_subcommand(args)),
         CargoNxSubcommand::Build(args) => finish(cmd::build::handle_subcommand(args)),
         CargoNxSubcommand::Bundle(args) => finish(cmd::bundle::handle_subcommand(args)),
