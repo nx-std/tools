@@ -12,33 +12,34 @@ use std::{
     process::{Command, ExitStatus},
 };
 
+use crate::ui;
+
 mod assets;
 pub mod manifest;
 
 /// Handle the `new` subcommand: scaffold a new Switch homebrew project by
 /// proxying `cargo new` and patching its output with the nx configuration.
-pub fn handle_subcommand(args: Args) -> Result<(), NewError> {
+pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     run_cargo_new(&args)?;
 
     let manifest_path = args.path.join("Cargo.toml");
-    let original =
-        std::fs::read_to_string(&manifest_path).map_err(|err| NewError::ManifestRead {
-            path: manifest_path.clone(),
-            source: err,
-        })?;
+    let original = std::fs::read_to_string(&manifest_path).map_err(|err| Error::ManifestRead {
+        path: manifest_path.clone(),
+        source: err,
+    })?;
 
     let name = manifest::package_name(&original).map_err(|err| match err {
-        manifest::PackageNameError::Parse(source) => NewError::ManifestParse {
+        manifest::PackageNameError::Parse(source) => Error::ManifestParse {
             path: manifest_path.clone(),
             source,
         },
-        manifest::PackageNameError::Missing => NewError::ManifestName {
+        manifest::PackageNameError::Missing => Error::ManifestName {
             path: manifest_path.clone(),
         },
     })?;
 
     let patched = manifest::patch_manifest(&original, args.kind, &name).map_err(|err| {
-        NewError::ManifestPatch {
+        Error::ManifestPatch {
             path: manifest_path.clone(),
             source: err,
         }
@@ -53,13 +54,13 @@ pub fn handle_subcommand(args: Args) -> Result<(), NewError> {
 
     write_cargo_config(&args.path)?;
 
-    println!("Configured `{name}` as an nx {} package", args.kind);
+    ui::status("Created", &format!("nx {} package `{name}`", args.kind));
     Ok(())
 }
 
 /// Run `cargo new` for the requested package, delegating directory creation,
 /// package-name validation, and VCS setup to Cargo.
-fn run_cargo_new(args: &Args) -> Result<(), NewError> {
+fn run_cargo_new(args: &Args) -> Result<(), Error> {
     let mut command = Command::new("cargo");
     command.arg("new");
     match args.kind {
@@ -80,16 +81,16 @@ fn run_cargo_new(args: &Args) -> Result<(), NewError> {
     }
     command.arg(&args.path);
 
-    let status = command.status().map_err(NewError::CargoNewSpawn)?;
+    let status = command.status().map_err(Error::CargoNewSpawn)?;
     if !status.success() {
-        return Err(NewError::CargoNewExit { status });
+        return Err(Error::CargoNewExit { status });
     }
     Ok(())
 }
 
 /// Write `contents` to `path`, replacing any file `cargo new` created there.
-fn write_file(path: &Path, contents: &str) -> Result<(), NewError> {
-    std::fs::write(path, contents).map_err(|err| NewError::WriteFile {
+fn write_file(path: &Path, contents: &str) -> Result<(), Error> {
+    std::fs::write(path, contents).map_err(|err| Error::WriteFile {
         path: path.to_path_buf(),
         source: err,
     })
@@ -97,9 +98,9 @@ fn write_file(path: &Path, contents: &str) -> Result<(), NewError> {
 
 /// Create `.cargo/config.toml` under `root`, enabling `build-std` for the
 /// freestanding Switch target.
-fn write_cargo_config(root: &Path) -> Result<(), NewError> {
+fn write_cargo_config(root: &Path) -> Result<(), Error> {
     let dir = root.join(".cargo");
-    std::fs::create_dir_all(&dir).map_err(|err| NewError::CreateDir {
+    std::fs::create_dir_all(&dir).map_err(|err| Error::CreateDir {
         path: dir.clone(),
         source: err,
     })?;
@@ -108,7 +109,7 @@ fn write_cargo_config(root: &Path) -> Result<(), NewError> {
 
 /// Errors produced while scaffolding a new project with [`handle_subcommand`].
 #[derive(Debug, thiserror::Error)]
-pub enum NewError {
+pub enum Error {
     /// `cargo new` could not be launched.
     ///
     /// Typically the `cargo` executable is missing from `PATH`.
@@ -165,6 +166,16 @@ pub enum NewError {
         #[source]
         source: io::Error,
     },
+}
+
+impl ui::CliError for Error {
+    fn exit_code(&self) -> i32 {
+        match self {
+            // Propagate the underlying `cargo new` exit code.
+            Self::CargoNewExit { status } => status.code().unwrap_or(ui::EXIT_FAILURE),
+            _ => ui::EXIT_FAILURE,
+        }
+    }
 }
 
 /// The `new` subcommand CLI arguments.
@@ -374,7 +385,7 @@ mod tests {
             //* Then
             let error = result.expect_err("scaffolding into a populated directory should fail");
             assert!(
-                matches!(error, NewError::CargoNewExit { .. }),
+                matches!(error, Error::CargoNewExit { .. }),
                 "expected CargoNewExit, got {error:?}"
             );
         }

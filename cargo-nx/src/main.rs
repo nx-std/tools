@@ -1,67 +1,142 @@
-use clap::Parser as _;
-use cli::{Cargo, CargoNxSubcommand, ToolSubcommand};
+//! `cargo-nx`: a Cargo subcommand for building Nintendo Switch homebrew.
+
 use tracing_subscriber::EnvFilter;
 
-mod cli;
 mod cmd;
 mod pack;
+mod ui;
 
 fn main() {
-    // Set up the logger
+    // Set up the diagnostic logger. User-facing output goes through `ui`.
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    // Parse the command-line arguments and handle the subcommand
-    let Cargo::Nx(args) = Cargo::parse();
-    let result: Result<(), String> = match args.subcommand {
-        CargoNxSubcommand::New(args) => {
-            cmd::new::handle_subcommand(args).map_err(|err| err.to_string())
-        }
-        CargoNxSubcommand::Build(args) => {
-            cmd::build::handle_subcommand(args);
-            Ok(())
-        }
-        CargoNxSubcommand::Bundle(args) => {
-            cmd::bundle::handle_subcommand(args).map_err(|err| err.to_string())
-        }
-        CargoNxSubcommand::Link(args) => {
-            cmd::link::handle_subcommand(args);
-            Ok(())
-        }
-        CargoNxSubcommand::Tool(args) => match args.subcommand {
-            ToolSubcommand::Elf2nro(args) => {
-                cmd::tool::elf2nro::handle_subcommand(args).map_err(|err| err.to_string())
-            }
-            ToolSubcommand::Elf2nso(args) => {
-                cmd::tool::elf2nso::handle_subcommand(args).map_err(|err| err.to_string())
-            }
-            ToolSubcommand::Elf2kip(args) => {
-                cmd::tool::elf2kip::handle_subcommand(args).map_err(|err| err.to_string())
-            }
-            ToolSubcommand::BuildPfs0(args) => {
-                cmd::tool::build_pfs0::handle_subcommand(args).map_err(|err| err.to_string())
-            }
-            ToolSubcommand::BuildRomfs(args) => {
-                cmd::tool::build_romfs::handle_subcommand(args).map_err(|err| err.to_string())
-            }
-            ToolSubcommand::Npdmtool(args) => {
-                cmd::tool::npdmtool::handle_subcommand(args).map_err(|err| err.to_string())
-            }
-            ToolSubcommand::Nacptool(args) => {
-                cmd::tool::nacptool::handle_subcommand(args).map_err(|err| err.to_string())
-            }
-            ToolSubcommand::Bin2s(args) => {
-                cmd::tool::bin2s::handle_subcommand(args).map_err(|err| err.to_string())
-            }
-            ToolSubcommand::Bin2c(args) => {
-                cmd::tool::bin2c::handle_subcommand(args).map_err(|err| err.to_string())
-            }
-        },
+    // Parse the command-line arguments and dispatch to the subcommand.
+    let Cargo::Nx(CargoNxArgs { subcommand }) = clap::Parser::parse();
+    let rc= match subcommand {
+        CargoNxSubcommand::New(args) => finish(cmd::new::handle_subcommand(args)),
+        CargoNxSubcommand::Build(args) => finish(cmd::build::handle_subcommand(args)),
+        CargoNxSubcommand::Bundle(args) => finish(cmd::bundle::handle_subcommand(args)),
+        CargoNxSubcommand::Link(args) => finish(cmd::link::handle_subcommand(args)),
+        CargoNxSubcommand::Tool(args) => finish(cmd::tool::handle_subcommand(args)),
     };
 
-    if let Err(e) = result {
-        eprintln!("Error: {}", e);
-        std::process::exit(1);
+    std::process::exit(rc);
+}
+
+#[derive(clap::Parser)]
+#[clap(name = "cargo", bin_name = "cargo")]
+pub enum Cargo {
+    Nx(CargoNxArgs),
+}
+
+#[derive(clap::Args)]
+#[clap(author, version, about)]
+pub struct CargoNxArgs {
+    #[command(subcommand)]
+    pub subcommand: CargoNxSubcommand,
+}
+
+#[derive(clap::Subcommand)]
+pub enum CargoNxSubcommand {
+    #[command(
+        about = "Create a new Rust project for the Nintendo Switch",
+        after_help = include_str!("cmd/new__after_help.md")
+    )]
+    New(cmd::new::Args),
+    #[command(
+        about = "Build a Rust project for the Nintendo Switch",
+        after_help = include_str!("cmd/build__after_help.md")
+    )]
+    Build(cmd::build::Args),
+    #[command(
+        about = "Package a pre-built ELF as an NRO or NSP",
+        after_help = include_str!("cmd/bundle__after_help.md")
+    )]
+    Bundle(cmd::bundle::Args),
+    #[command(
+        about = "Send a file to the Nintendo Switch",
+        after_help = include_str!("cmd/link__after_help.md")
+    )]
+    Link(cmd::link::Args),
+    #[command(
+        about = "Switch homebrew toolchain utilities",
+        after_help = include_str!("cmd/tool__after_help.md")
+    )]
+    Tool(ToolArgs),
+}
+
+#[derive(clap::Args)]
+pub struct ToolArgs {
+    #[command(subcommand)]
+    pub subcommand: ToolSubcommand,
+}
+
+#[derive(clap::Subcommand)]
+pub enum ToolSubcommand {
+    #[command(
+        about = "Convert an ELF file to NRO format",
+        after_help = include_str!("cmd/tool/elf2nro__after_help.md")
+    )]
+    Elf2nro(cmd::tool::elf2nro::Args),
+    #[command(
+        about = "Convert an ELF file to NSO format",
+        after_help = include_str!("cmd/tool/elf2nso__after_help.md")
+    )]
+    Elf2nso(cmd::tool::elf2nso::Args),
+    #[command(
+        about = "Convert an ELF file to KIP format",
+        after_help = include_str!("cmd/tool/elf2kip__after_help.md")
+    )]
+    Elf2kip(cmd::tool::elf2kip::Args),
+    #[command(
+        name = "build_pfs0",
+        about = "Build a PFS0 archive from a directory",
+        after_help = include_str!("cmd/tool/build_pfs0__after_help.md")
+    )]
+    BuildPfs0(cmd::tool::build_pfs0::Args),
+    #[command(
+        name = "build_romfs",
+        about = "Build a RomFS image from a directory",
+        after_help = include_str!("cmd/tool/build_romfs__after_help.md")
+    )]
+    BuildRomfs(cmd::tool::build_romfs::Args),
+    #[command(
+        about = "Convert JSON metadata to NPDM format",
+        after_help = include_str!("cmd/tool/npdmtool__after_help.md")
+    )]
+    Npdmtool(cmd::tool::npdmtool::Args),
+    #[command(
+        about = "Create or manipulate NACP files",
+        after_help = include_str!("cmd/tool/nacptool__after_help.md")
+    )]
+    Nacptool(cmd::tool::nacptool::Args),
+    #[command(
+        name = "bin2s",
+        about = "Convert binary files to GAS assembly source",
+        after_help = include_str!("cmd/tool/bin2s__after_help.md")
+    )]
+    Bin2s(cmd::tool::bin2s::Args),
+    #[command(
+        name = "bin2c",
+        alias = "raw2c",
+        about = "Convert binary files to C source",
+        after_help = include_str!("cmd/tool/bin2c__after_help.md")
+    )]
+    Bin2c(cmd::tool::bin2c::Args),
+}
+
+/// Report a command result and resolve it to a process exit code.
+///
+/// On success returns `0`. On failure, prints the error and its full source
+/// chain via [`ui::error`] and returns the error's [`ui::CliError::exit_code`].
+fn finish<E: ui::CliError>(result: Result<(), E>) -> i32 {
+    match result {
+        Ok(()) => 0,
+        Err(err) => {
+            ui::error(&err);
+            err.exit_code()
+        }
     }
 }

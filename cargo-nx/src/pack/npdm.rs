@@ -32,18 +32,18 @@ pub fn build_npdm_from_value(json: &serde_json::Value) -> Result<Vec<u8>, Error>
 /// Errors from NPDM packaging.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Failed to read JSON file '{}': {source}", path.display())]
+    #[error("Failed to read JSON file '{}'", path.display())]
     ReadJson {
         path: PathBuf,
         source: std::io::Error,
     },
 
-    #[error("Failed to parse JSON file '{}': {source}", path.display())]
+    #[error("Failed to parse JSON file '{}'", path.display())]
     ParseJson {
         path: PathBuf,
         source: serde_json::Error,
     },
 
-    #[error("Failed to parse NPDM descriptor: {0}")]
+    #[error("Failed to parse NPDM descriptor")]
     Parse(#[source] npdmtool::Error),
 }

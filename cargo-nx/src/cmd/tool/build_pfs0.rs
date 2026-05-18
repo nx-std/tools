@@ -35,17 +35,17 @@ pub struct Args {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Failed to collect entries from the input directory
-    #[error("Failed to collect PFS0 entries from directory '{}': {source}", path.display())]
+    #[error("Failed to collect PFS0 entries from directory '{}'", path.display())]
     CollectEntries {
         path: PathBuf,
         source: pfs0::BuildError,
     },
 
     /// Failed to build the PFS0 archive
-    #[error("Failed to build PFS0 archive: {0}")]
+    #[error("Failed to build PFS0 archive")]
     BuildArchive(#[source] pfs0::BuildError),
 
     /// Failed to write the PFS0 output file to disk
-    #[error("Failed to write PFS0 file '{}': {source}", path.display())]
+    #[error("Failed to write PFS0 file '{}'", path.display())]
     WriteOutput { path: PathBuf, source: io::Error },
 }

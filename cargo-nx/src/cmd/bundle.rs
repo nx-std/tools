@@ -194,49 +194,51 @@ pub struct Args {
 /// Errors from the `bundle` subcommand.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Failed to resolve {flag} path '{}': {source}", path.display())]
+    #[error("Failed to resolve {flag} path '{}'", path.display())]
     ResolvePath {
         flag: &'static str,
         path: PathBuf,
         source: io::Error,
     },
 
-    #[error("Failed to create tmp dir '{}': {source}", path.display())]
+    #[error("Failed to create tmp dir '{}'", path.display())]
     CreateTmpDir { path: PathBuf, source: io::Error },
 
-    #[error("Failed to read ELF file '{}': {source}", path.display())]
+    #[error("Failed to read ELF file '{}'", path.display())]
     ReadElf { path: PathBuf, source: io::Error },
 
-    #[error("Failed to read icon file '{}': {source}", path.display())]
+    #[error("Failed to read icon file '{}'", path.display())]
     ReadIcon { path: PathBuf, source: io::Error },
 
     #[error("Missing required NACP field: {0} (pass it or use --no-nacp)")]
     MissingNacpField(&'static str),
 
-    #[error("Failed to build RomFS from directory '{}': {source}", path.display())]
+    #[error("Failed to build RomFS from directory '{}'", path.display())]
     BuildRomfsFromDir {
         path: PathBuf,
         source: romfs::FromDirectoryError,
     },
 
-    #[error("Failed to build RomFS image: {0}")]
+    #[error("Failed to build RomFS image")]
     BuildRomfs(#[source] romfs::BuildError),
 
-    #[error(transparent)]
-    BuildNacp(pack::nacp::Error),
+    #[error("Failed to assemble the NACP control data")]
+    BuildNacp(#[source] pack::nacp::Error),
 
-    #[error(transparent)]
-    BuildNro(pack::nro::Error),
+    #[error("Failed to assemble the NRO artifact")]
+    BuildNro(#[source] pack::nro::Error),
 
-    #[error(transparent)]
-    BuildNso(pack::nso::Error),
+    #[error("Failed to assemble the NSO image")]
+    BuildNso(#[source] pack::nso::Error),
 
-    #[error(transparent)]
-    BuildNpdm(pack::npdm::Error),
+    #[error("Failed to assemble the process metadata")]
+    BuildNpdm(#[source] pack::npdm::Error),
 
-    #[error(transparent)]
-    BuildNsp(pack::nsp::Error),
+    #[error("Failed to assemble the NSP package")]
+    BuildNsp(#[source] pack::nsp::Error),
 
-    #[error("Failed to write output file '{}': {source}", path.display())]
+    #[error("Failed to write output file '{}'", path.display())]
     WriteOutput { path: PathBuf, source: io::Error },
 }
+
+impl crate::ui::CliError for Error {}

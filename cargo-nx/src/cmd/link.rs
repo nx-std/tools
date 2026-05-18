@@ -7,12 +7,15 @@
 //! See: https://github.com/switchbrew/switch-tools/blob/22756068dd0ed6ff9734c59cb4f99ebd3f62555b/src/nxlink.c
 
 use std::{
+    io,
     net::{IpAddr, Ipv4Addr},
     path::PathBuf,
     time::Duration,
 };
 
 use nx_netloader::loader::send::send_nro_file;
+
+use crate::ui;
 
 /// Handle the `link` subcommand.
 #[tokio::main(flavor = "current_thread")]
@@ -26,83 +29,71 @@ pub async fn handle_subcommand(
         nro_file,
         mut nro_args,
     }: Args,
-) {
-    tracing::debug!("File path: {}", nro_file.display());
+) -> Result<(), Error> {
+    tracing::debug!(file = %nro_file.display(), "resolving NRO file");
 
-    // Check if the file exists
+    // Validate the input file
     if !nro_file.exists() {
-        eprintln!("The file does not exist: {}", nro_file.display());
-        return;
+        return Err(Error::FileNotFound { path: nro_file });
     }
-
     if !nro_file.is_file() {
-        eprintln!("The path is not a file: {}", nro_file.display());
-        return;
+        return Err(Error::NotAFile { path: nro_file });
     }
-
-    // Check if the file extension is valid
     if nro_file.extension().is_none_or(|ext| ext != "nro") {
-        eprintln!(
-            "The file must have a `.nro` extension: {}",
-            nro_file.display()
-        );
-        return;
+        return Err(Error::InvalidExtension { path: nro_file });
     }
 
     // Get the file name
-    let nro_file_name = match nro_file.file_name() {
-        Some(name) => name.to_string_lossy().to_string(),
-        None => {
-            eprintln!("Failed to get the file name");
-            return;
-        }
+    let Some(nro_file_name) = nro_file
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+    else {
+        return Err(Error::NoFileName { path: nro_file });
     };
 
-    tracing::debug!("NRO file name: {}", nro_file_name);
+    tracing::debug!(file_name = %nro_file_name, "resolved NRO file name");
 
-    // If the path has a `.nro` extension, use it as the destination path
-    // Otherwise, if the path ends with a `/`, join the file name to the path
+    // If the path has a `.nro` extension, use it as the destination path.
+    // Otherwise, if it ends with a `/`, join the file name onto it.
     let dest_path = match path {
         Some(path) => {
             if path.extension().is_some_and(|ext| ext == "nro") {
-                path.to_str()
-                    .expect("Failed to convert path to string")
-                    .to_string()
-            } else if path.to_str().is_some_and(|path| path.ends_with("/")) {
-                path.join(nro_file_name)
-                    .to_str()
-                    .expect("Failed to convert path to string")
-                    .to_string()
+                let Some(path_str) = path.to_str() else {
+                    return Err(Error::NonUtf8Path { path });
+                };
+                path_str.to_string()
+            } else if path.to_str().is_some_and(|path| path.ends_with('/')) {
+                let joined = path.join(&nro_file_name);
+                let Some(joined_str) = joined.to_str() else {
+                    return Err(Error::NonUtf8Path { path: joined });
+                };
+                joined_str.to_string()
             } else {
-                eprintln!("Invalid path: {}", path.display());
-                return;
+                return Err(Error::InvalidUploadPath { path });
             }
         }
         // Otherwise, use the NRO file name
         None => nro_file_name,
     };
 
-    tracing::debug!("Destination path: {}", dest_path);
+    tracing::debug!(dest = %dest_path, "resolved destination path");
 
     // Open the file for reading
-    let mut file = match std::fs::File::open(nro_file) {
-        Ok(file) => file,
-        Err(e) => {
-            eprintln!("Failed to read the file: {}", e);
-            return;
-        }
-    };
+    let mut file = std::fs::File::open(&nro_file).map_err(|err| Error::OpenFile {
+        path: nro_file.clone(),
+        source: err,
+    })?;
 
     // Get the file length
-    let file_length = match file.metadata() {
-        Ok(metadata) => metadata.len() as usize,
-        Err(e) => {
-            eprintln!("Failed to get the file size: {}", e);
-            return;
-        }
-    };
+    let file_length = file
+        .metadata()
+        .map_err(|err| Error::FileMetadata {
+            path: nro_file,
+            source: err,
+        })?
+        .len() as usize;
 
-    tracing::debug!("File length: {}", file_length);
+    tracing::debug!(length = file_length, "resolved file length");
 
     // Parse the extra arguments, and add them to the NRO arguments
     if let Some(extra_args) = extra_args {
@@ -116,44 +107,37 @@ pub async fn handle_subcommand(
     let remote_addr = match address {
         Some(ip_addr) => (ip_addr, nx_netloader::SERVER_PORT),
         None => {
-            match nx_netloader::loader::discovery::discover(Duration::from_millis(250), retries)
-                .await
-            {
-                Ok(Some(ip_addr)) => (ip_addr, nx_netloader::SERVER_PORT),
-                Ok(None) => {
-                    eprintln!("No server found in the network");
-                    return;
-                }
-                Err(err) => {
-                    eprintln!("Server discovery failed: {}", err);
-                    return;
-                }
-            }
+            let discovered =
+                nx_netloader::loader::discovery::discover(Duration::from_millis(250), retries)
+                    .await
+                    .map_err(Error::Discovery)?;
+            let Some(ip_addr) = discovered else {
+                return Err(Error::NoServerFound);
+            };
+            (ip_addr, nx_netloader::SERVER_PORT)
         }
     };
 
-    println!("Sending file to: {}", remote_addr.0);
+    ui::status("Sending", &format!("{dest_path} to {}", remote_addr.0));
 
     // Send the file to the remote server
     tokio::select! {biased;
         res = send_nro_file(remote_addr, &dest_path, &mut file, file_length, nro_args) => {
-            match res {
-                Ok(_) => {
-                    println!("File sent successfully");
-                }
-                Err(err) => {
-                    eprintln!("Failed to send the file: {err}");
-                }
-            }
+            res.map_err(Error::Send)?;
+            ui::status("Finished", "file sent");
         }
         _ = tokio::signal::ctrl_c() => {
-            eprintln!("Aborted by the user");
+            ui::warning("aborted by the user");
+            return Ok(());
         }
     }
 
     // Start the nxlink stdio server if requested
     if server {
-        println!("Starting the nxlink stdio server. Press Ctrl+C to exit.");
+        ui::status(
+            "Listening",
+            "nxlink stdio server started (press Ctrl+C to exit)",
+        );
 
         let stdio_server_addr = (Ipv4Addr::UNSPECIFIED, nx_netloader::CLIENT_PORT);
         tokio::select! {biased;
@@ -161,6 +145,8 @@ pub async fn handle_subcommand(
             _ = tokio::signal::ctrl_c() => {}
         }
     }
+
+    Ok(())
 }
 
 /// The `link` subcommand CLI arguments.
@@ -188,6 +174,56 @@ pub struct Args {
     #[arg(value_name = "ARGS", value_parser)]
     pub nro_args: Vec<String>,
 }
+
+/// Errors from the `link` subcommand.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// The NRO file passed on the command line does not exist.
+    #[error("File does not exist: '{}'", path.display())]
+    FileNotFound { path: PathBuf },
+
+    /// The NRO path passed on the command line is not a regular file.
+    #[error("Path is not a file: '{}'", path.display())]
+    NotAFile { path: PathBuf },
+
+    /// The input file does not have the required `.nro` extension.
+    #[error("File must have a `.nro` extension: '{}'", path.display())]
+    InvalidExtension { path: PathBuf },
+
+    /// The input path has no final component to use as a file name.
+    #[error("Could not determine the file name of '{}'", path.display())]
+    NoFileName { path: PathBuf },
+
+    /// A path could not be represented as UTF-8 for the upload protocol.
+    #[error("Path is not valid UTF-8: '{}'", path.display())]
+    NonUtf8Path { path: PathBuf },
+
+    /// The `--path` upload target is neither a `.nro` file nor a directory.
+    #[error("Invalid upload path: '{}'", path.display())]
+    InvalidUploadPath { path: PathBuf },
+
+    /// The input NRO file could not be opened for reading.
+    #[error("Failed to open file '{}'", path.display())]
+    OpenFile { path: PathBuf, source: io::Error },
+
+    /// The input NRO file's metadata could not be read.
+    #[error("Failed to read metadata of '{}'", path.display())]
+    FileMetadata { path: PathBuf, source: io::Error },
+
+    /// No netloader server answered discovery on the local network.
+    #[error("No netloader server found on the network")]
+    NoServerFound,
+
+    /// The netloader server discovery process failed.
+    #[error("Server discovery failed")]
+    Discovery(#[source] io::Error),
+
+    /// Transferring the NRO file to the netloader server failed.
+    #[error("Failed to send the file")]
+    Send(#[source] io::Error),
+}
+
+impl ui::CliError for Error {}
 
 /// Parse the extra arguments CLI string into a vector of arguments.
 fn parse_extra_args(args: String) -> Vec<String> {

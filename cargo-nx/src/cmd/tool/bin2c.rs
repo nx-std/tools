@@ -43,7 +43,7 @@ pub struct Args {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Failed to read an input file
-    #[error("Failed to read input file '{}': {source}", path.display())]
+    #[error("Failed to read input file '{}'", path.display())]
     ReadInput { path: PathBuf, source: io::Error },
 
     /// Could not derive a valid C identifier from the input filename
@@ -55,11 +55,11 @@ pub enum Error {
     WriteStdout(#[source] io::Error),
 
     /// Failed to write the C output file
-    #[error("Failed to write C output file '{}': {source}", path.display())]
+    #[error("Failed to write C output file '{}'", path.display())]
     WriteOutputFile { path: PathBuf, source: io::Error },
 
     /// Failed to write the C header file
-    #[error("Failed to write header file '{}': {source}", path.display())]
+    #[error("Failed to write header file '{}'", path.display())]
     WriteHeader { path: PathBuf, source: io::Error },
 }
 

@@ -34,11 +34,11 @@ pub struct Args {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Failed to read the JSON descriptor file from disk
-    #[error("Failed to read JSON file '{}': {source}", path.display())]
+    #[error("Failed to read JSON file '{}'", path.display())]
     ReadJson { path: PathBuf, source: io::Error },
 
     /// Failed to parse JSON from the descriptor file
-    #[error("Failed to parse JSON file '{}': {source}", path.display())]
+    #[error("Failed to parse JSON file '{}'", path.display())]
     ParseJson {
         path: PathBuf,
         source: serde_json::Error,
@@ -49,7 +49,7 @@ pub enum Error {
     InvalidArgs(String),
 
     /// Failed to parse a hexadecimal value from the JSON descriptor
-    #[error("Failed to parse {field} '{value}' as hexadecimal: {source}")]
+    #[error("Failed to parse {field} '{value}' as hexadecimal")]
     ParseHex {
         field: String,
         value: String,
@@ -57,7 +57,7 @@ pub enum Error {
     },
 
     /// Failed to write the NPDM output file to disk
-    #[error("Failed to write NPDM file '{}': {source}", path.display())]
+    #[error("Failed to write NPDM file '{}'", path.display())]
     WriteNpdm { path: PathBuf, source: io::Error },
 }
 

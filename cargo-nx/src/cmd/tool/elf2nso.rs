@@ -46,21 +46,21 @@ pub struct Args {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Failed to read the input ELF file from disk
-    #[error("Failed to read ELF file '{}': {source}", path.display())]
+    #[error("Failed to read ELF file '{}'", path.display())]
     ReadElf { path: PathBuf, source: io::Error },
 
     /// Failed to parse ELF segments from the input file
-    #[error("Failed to parse ELF file '{}': {source}", path.display())]
+    #[error("Failed to parse ELF file '{}'", path.display())]
     ParseElf {
         path: PathBuf,
         source: elf::ParseError,
     },
 
     /// Failed to build the NSO binary from parsed segments
-    #[error("Failed to build NSO: {0}")]
+    #[error("Failed to build NSO")]
     BuildNso(#[source] nso::BuildError),
 
     /// Failed to write the NSO output file to disk
-    #[error("Failed to write NSO file '{}': {source}", path.display())]
+    #[error("Failed to write NSO file '{}'", path.display())]
     WriteNso { path: PathBuf, source: io::Error },
 }

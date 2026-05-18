@@ -22,6 +22,7 @@ This document establishes consistent, production-grade logging patterns across t
 1. [Logger Configuration](#logger-configuration)
 2. [Core Principles](#core-principles)
    - [1. Use `tracing` Crate Exclusively](#1-use-tracing-crate-exclusively)
+   - [User-Facing CLI Output](#user-facing-cli-output)
    - [2. Structured Logging is Mandatory](#2-structured-logging-is-mandatory)
    - [3. Line Length and Multiline Formatting](#3-line-length-and-multiline-formatting)
    - [4. Consistent Log Levels](#4-consistent-log-levels)
@@ -87,7 +88,9 @@ export RUST_LOG="metadata_db=debug,sqlx=warn"
 
 ### 1. Use `tracing` Crate Exclusively
 
-**ALWAYS** use the fully qualified form `tracing::<macro>!()` for all logging operations and `#[tracing::instrument]` for the instrument attribute. **NEVER** use `println!`, `eprintln!`, `log` crate, or import tracing macros.
+**ALWAYS** use the fully qualified form `tracing::<macro>!()` for all *diagnostic logging* and `#[tracing::instrument]` for the instrument attribute. **NEVER** use the `log` crate or import tracing macros.
+
+The ban on `println!` / `eprintln!` applies to **diagnostic logging** — the observability output, gated by log levels, that developers and operators read. It does **NOT** apply to a CLI's **user-facing output**: the progress, results, and errors a user runs the tool to see are the program's product, not logs. See [User-Facing CLI Output](#user-facing-cli-output) below for the rule that governs them.
 
 ```rust
 // ✅ CORRECT - Fully qualified tracing macros
@@ -117,6 +120,38 @@ eprintln!("Error: {}", err);
 
 // ❌ WRONG - Using log crate
 log::info!("Job started");
+```
+
+### User-Facing CLI Output
+
+A command-line tool has **two distinct output channels**, and they MUST NOT be conflated:
+
+- **Diagnostic logging** — `tracing`, gated by `RUST_LOG` / `WORKSPACE_LOG`. Opt-in
+  output for debugging and observability. Governed by every rule in this document.
+- **User-facing output** — the progress lines, status, warnings, and error reports a
+  user runs the command to see. This is the program's **product**, written to
+  stdout/stderr unconditionally.
+
+User-facing output MUST go through a dedicated `ui` module that wraps `println!` /
+`eprintln!` behind a small, Cargo-style API (e.g. `ui::status`, `ui::warning`,
+`ui::error`). Calling `println!` / `eprintln!` directly — scattered across command
+code — remains **forbidden**: the `ui` module is the single sanctioned wrapper, so
+output style stays consistent and testable. This mirrors Cargo's own split between its
+`Shell` abstraction and its `tracing` / `log` diagnostics.
+
+In `cargo-nx`, that module is `cargo-nx/src/ui.rs`.
+
+```rust
+// ✅ CORRECT - user-facing output through the `ui` module
+ui::status("Building", "NRO artifact");
+ui::error(&err); // prints `error:` + the full `Caused by:` chain
+
+// ✅ CORRECT - diagnostics still go through `tracing`
+tracing::debug!(target = %triple, "resolved build target");
+
+// ❌ WRONG - bare println!/eprintln! scattered in command code
+println!("Building...");
+eprintln!("Error: {err}");
 ```
 
 ### 2. Structured Logging is Mandatory

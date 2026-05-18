@@ -18,6 +18,6 @@ pub fn build_simple(name: String, author: String, version: String) -> Result<Vec
 /// Errors from NACP packaging.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Failed to build NACP: {0}")]
+    #[error("Failed to build NACP")]
     Build(#[source] nacp::BuildError),
 }

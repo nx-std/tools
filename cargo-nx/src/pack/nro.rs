@@ -34,9 +34,9 @@ pub fn build_nro(elf_bytes: &[u8], assets: NroAssets) -> Result<Vec<u8>, Error> 
 /// Errors from NRO packaging.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Failed to parse ELF: {0}")]
+    #[error("Failed to parse ELF")]
     ParseElf(#[source] elf::ParseError),
 
-    #[error("Failed to build NRO: {0}")]
+    #[error("Failed to build NRO")]
     Build(#[source] nro::BuildError),
 }

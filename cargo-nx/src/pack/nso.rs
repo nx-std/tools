@@ -14,9 +14,9 @@ pub fn build_nso(elf_bytes: &[u8]) -> Result<Vec<u8>, Error> {
 /// Errors from NSO packaging.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Failed to parse ELF: {0}")]
+    #[error("Failed to parse ELF")]
     ParseElf(#[source] elf::ParseError),
 
-    #[error("Failed to build NSO: {0}")]
+    #[error("Failed to build NSO")]
     Build(#[source] nso::BuildError),
 }

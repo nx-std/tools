@@ -51,21 +51,21 @@ pub struct Args {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Failed to collect entries from the input directory
-    #[error("Failed to collect RomFS entries from directory '{}': {source}", path.display())]
+    #[error("Failed to collect RomFS entries from directory '{}'", path.display())]
     CollectEntries {
         path: PathBuf,
         source: romfs::FromDirectoryError,
     },
 
     /// Failed to build the RomFS image
-    #[error("Failed to build RomFS image: {0}")]
+    #[error("Failed to build RomFS image")]
     BuildImage(#[source] romfs::BuildError),
 
     /// Failed to create the output file
-    #[error("Failed to create RomFS output file '{}': {source}", path.display())]
+    #[error("Failed to create RomFS output file '{}'", path.display())]
     CreateOutput { path: PathBuf, source: io::Error },
 
     /// Failed to write the RomFS data to the output file
-    #[error("Failed to write RomFS file '{}': {source}", path.display())]
+    #[error("Failed to write RomFS file '{}'", path.display())]
     WriteOutput { path: PathBuf, source: io::Error },
 }

@@ -122,44 +122,44 @@ pub struct Args {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Failed to read the input ELF file from disk
-    #[error("Failed to read ELF file '{}': {source}", path.display())]
+    #[error("Failed to read ELF file '{}'", path.display())]
     ReadElf { path: PathBuf, source: io::Error },
 
     /// Failed to parse ELF segments from the input file
-    #[error("Failed to parse ELF file '{}': {source}", path.display())]
+    #[error("Failed to parse ELF file '{}'", path.display())]
     ParseElf {
         path: PathBuf,
         source: elf::ParseError,
     },
 
     /// Failed to read the icon file from disk
-    #[error("Failed to read icon file '{}': {source}", path.display())]
+    #[error("Failed to read icon file '{}'", path.display())]
     ReadIcon { path: PathBuf, source: io::Error },
 
     /// Failed to read the NACP control file from disk
-    #[error("Failed to read NACP file '{}': {source}", path.display())]
+    #[error("Failed to read NACP file '{}'", path.display())]
     ReadNacp { path: PathBuf, source: io::Error },
 
     /// Failed to read the RomFS image file from disk
-    #[error("Failed to read RomFS file '{}': {source}", path.display())]
+    #[error("Failed to read RomFS file '{}'", path.display())]
     ReadRomfs { path: PathBuf, source: io::Error },
 
     /// Failed to build RomFS from a directory
-    #[error("Failed to build RomFS from directory '{}': {source}", path.display())]
+    #[error("Failed to build RomFS from directory '{}'", path.display())]
     BuildRomfsFromDir {
         path: PathBuf,
         source: romfs::FromDirectoryError,
     },
 
     /// Failed to serialize the RomFS image
-    #[error("Failed to build RomFS image: {0}")]
+    #[error("Failed to build RomFS image")]
     BuildRomfs(#[source] romfs::BuildError),
 
     /// Failed to build the NRO binary from parsed segments
-    #[error("Failed to build NRO: {0}")]
+    #[error("Failed to build NRO")]
     BuildNro(#[source] nro::BuildError),
 
     /// Failed to write the NRO output file to disk
-    #[error("Failed to write NRO file '{}': {source}", path.display())]
+    #[error("Failed to write NRO file '{}'", path.display())]
     WriteNro { path: PathBuf, source: io::Error },
 }

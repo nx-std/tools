@@ -18,9 +18,9 @@ pub fn build_nsp(main_nso: Vec<u8>, main_npdm: Vec<u8>) -> Result<Vec<u8>, Error
 /// Errors from NSP packaging.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Failed to add file to PFS0: {0}")]
+    #[error("Failed to add file to PFS0")]
     AddFile(#[source] pfs0::BuildError),
 
-    #[error("Failed to build PFS0: {0}")]
+    #[error("Failed to build PFS0")]
     Build(#[source] pfs0::BuildError),
 }

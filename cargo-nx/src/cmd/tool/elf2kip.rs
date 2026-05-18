@@ -155,29 +155,29 @@ pub struct Args {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Failed to read the input ELF file from disk
-    #[error("Failed to read ELF file '{}': {source}", path.display())]
+    #[error("Failed to read ELF file '{}'", path.display())]
     ReadElf { path: PathBuf, source: io::Error },
 
     /// Failed to parse ELF segments from the input file
-    #[error("Failed to parse ELF file '{}': {source}", path.display())]
+    #[error("Failed to parse ELF file '{}'", path.display())]
     ParseElf {
         path: PathBuf,
         source: elf::ParseError,
     },
 
     /// Failed to read the JSON descriptor file from disk
-    #[error("Failed to read JSON file '{}': {source}", path.display())]
+    #[error("Failed to read JSON file '{}'", path.display())]
     ReadJson { path: PathBuf, source: io::Error },
 
     /// Failed to parse JSON from the descriptor file into a Value
-    #[error("Failed to parse JSON file '{}': {source}", path.display())]
+    #[error("Failed to parse JSON file '{}'", path.display())]
     ParseJsonValue {
         path: PathBuf,
         source: serde_json::Error,
     },
 
     /// Failed to deserialize the KIP descriptor from JSON
-    #[error("Failed to deserialize KIP descriptor from '{}': {source}", path.display())]
+    #[error("Failed to deserialize KIP descriptor from '{}'", path.display())]
     DeserializeDescriptor {
         path: PathBuf,
         source: serde_json::Error,
@@ -188,7 +188,7 @@ pub enum Error {
     InvalidArgs(String),
 
     /// Failed to parse a hexadecimal value
-    #[error("Failed to parse {field} '{value}' as hexadecimal: {source}")]
+    #[error("Failed to parse {field} '{value}' as hexadecimal")]
     ParseHex {
         field: String,
         value: String,
@@ -196,15 +196,15 @@ pub enum Error {
     },
 
     /// Failed to build the KIP binary
-    #[error("Failed to build KIP: {0}")]
+    #[error("Failed to build KIP")]
     BuildKip(#[source] kip::BuildError),
 
     /// Failed to create the output file
-    #[error("Failed to create KIP output file '{}': {source}", path.display())]
+    #[error("Failed to create KIP output file '{}'", path.display())]
     CreateOutput { path: PathBuf, source: io::Error },
 
     /// Failed to write the KIP data to the output file
-    #[error("Failed to write KIP file '{}': {source}", path.display())]
+    #[error("Failed to write KIP file '{}'", path.display())]
     WriteOutput { path: PathBuf, source: io::Error },
 }
 

@@ -69,18 +69,18 @@ pub enum Error {
     InvalidTitleId(String),
 
     /// Failed to parse title ID as hexadecimal
-    #[error("Failed to parse titleid '{value}' as hexadecimal: {source}")]
+    #[error("Failed to parse titleid '{value}' as hexadecimal")]
     ParseTitleId {
         value: String,
         source: ParseIntError,
     },
 
     /// Failed to build the NACP structure
-    #[error("Failed to build NACP: {0}")]
+    #[error("Failed to build NACP")]
     BuildNacp(#[source] nacp::BuildError),
 
     /// Failed to write the NACP output file to disk
-    #[error("Failed to write NACP file '{}': {source}", path.display())]
+    #[error("Failed to write NACP file '{}'", path.display())]
     WriteOutput { path: PathBuf, source: io::Error },
 }
 
