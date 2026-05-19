@@ -356,7 +356,7 @@ struct NacpMetadata {
     lang: Option<NacpLangEntries>,
 }
 
-/// Per-language NACP entries (matches linkle's structure for compatibility)
+/// Per-language NACP entries.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct NacpLangEntries {
     #[serde(rename = "en-US")]
@@ -506,13 +506,13 @@ fn handle_nsp_format(root: &Path, artifact: &Artifact, metadata: NspMetadata) ->
 
 /// Convert NACP metadata from Cargo.toml to NACP bytes using nx-object
 ///
-/// This function replicates linkle's NACP serialization behavior:
+/// NACP serialization behavior:
 /// - Uses global name/author/version as defaults for all languages
 /// - Per-language entries override the global defaults
 /// - Parses title_id and dlc_base_title_id from hex strings
-/// - Applies default values matching linkle's behavior
+/// - Applies default values for unset fields
 fn build_nacp_from_metadata(metadata: &NacpMetadata) -> Result<Vec<u8>, String> {
-    // Use defaults matching linkle's behavior
+    // Use defaults for unset fields
     let default_name = metadata
         .name
         .clone()
@@ -531,7 +531,7 @@ fn build_nacp_from_metadata(metadata: &NacpMetadata) -> Result<Vec<u8>, String> 
     // If per-language entries exist, use them; otherwise use global defaults
     match &metadata.lang {
         Some(lang_entries) => {
-            // Set per-language entries (matching linkle's order and fallback logic)
+            // Set per-language entries, falling back to the global defaults
             let fallback = NacpLangEntry {
                 name: default_name.clone(),
                 author: default_author.clone(),
@@ -575,16 +575,16 @@ fn build_nacp_from_metadata(metadata: &NacpMetadata) -> Result<Vec<u8>, String> 
         }
     }
 
-    // Parse title_id if provided (matching linkle's behavior)
+    // Parse title_id if provided
     if let Some(ref title_id_str) = metadata.title_id {
         let title_id = u64::from_str_radix(title_id_str, 16)
             .map_err(|err| format!("Invalid title_id '{}': {}", title_id_str, err))?;
         builder = builder.application_id(title_id);
     }
 
-    // Note: dlc_base_title_id is not supported by NacpBuilder yet
-    // linkle sets add_on_content_base_id automatically to title_id + 0x1000
-    // which NacpBuilder already does, so we don't need to handle it separately
+    // Note: dlc_base_title_id is not supported by NacpBuilder yet.
+    // NacpBuilder already sets add_on_content_base_id to title_id + 0x1000
+    // automatically, so we don't need to handle it separately.
 
     // Build NACP bytes
     builder
@@ -757,7 +757,7 @@ fn strip_hex_prefix(s: &str) -> &str {
 /// Map syscall name to actual Nintendo Switch kernel syscall ID
 ///
 /// Returns the kernel syscall ID as hex string, or None if the syscall name is unknown.
-/// Based on vendor/nx-std-mono/subprojects/nx-svc/include/nx_svc.h syscall numbers.
+/// Uses the standard Nintendo Switch kernel syscall numbering.
 fn syscall_name_to_id(name: &str) -> Option<&'static str> {
     match name {
         "SetHeapSize" => Some("1"),

@@ -16,13 +16,9 @@ use tokio::{
 };
 
 /// The maximum file chunk size to compress and send to the server.
-///
-/// See: https://github.com/switchbrew/nx-hbmenu/blob/b7bcf3a9ece8f4717acabc8b9510e6a31a3efc1c/common/netloader.c#L35
 const MAX_FILE_CHUNK_SIZE: usize = 0x4000;
 
 /// The maximum NRO command-line arguments buffer size.
-///
-/// See: https://github.com/switchbrew/switch-tools/blob/22756068dd0ed6ff9734c59cb4f99ebd3f62555b/src/nxlink.c#L43
 const MAX_CMD_BUF_SIZE: usize = 3072;
 
 /// Send a file to the _netloader_ server.

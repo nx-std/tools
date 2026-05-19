@@ -10,7 +10,7 @@ pub fn handle_subcommand(args: Args) -> Result<(), Error> {
         .version(args.version);
 
     if let Some(titleid_str) = args.titleid {
-        // Validate titleid format to match C tool behavior: 16-digit hexadecimal
+        // Validate titleid format: 16-digit hexadecimal
         validate_titleid(&titleid_str)?;
 
         // Parse titleid as u64 for application_id
@@ -84,16 +84,14 @@ pub enum Error {
     WriteOutput { path: PathBuf, source: io::Error },
 }
 
-/// Validates titleid format to match C tool behavior.
+/// Validates titleid format.
 ///
-/// The C nacptool uses sscanf with "%016" SCNx64 format, which accepts
-/// up to 16 hexadecimal digits. We enforce exactly 16 hex digits for
-/// strict parity, rejecting inputs with:
+/// Enforces exactly 16 hexadecimal digits, rejecting inputs with:
 /// - Non-hex characters
 /// - Length != 16
-/// - 0x prefix (C tool doesn't strip prefixes)
+/// - A `0x` prefix
 fn validate_titleid(titleid: &str) -> Result<(), Error> {
-    // C tool expects exactly 16 hex digits with no prefix
+    // A titleid must be exactly 16 hex digits with no prefix
     if titleid.len() != 16 {
         return Err(Error::InvalidTitleId(format!(
             "Invalid titleid format: expected exactly 16 hexadecimal digits, got {} characters",

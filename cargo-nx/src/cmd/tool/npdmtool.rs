@@ -392,7 +392,7 @@ fn parse_filesystem_access(json: &serde_json::Value) -> Result<FilesystemAccess,
 fn parse_service_access(json: &serde_json::Value) -> Result<ServiceAccess, Error> {
     let mut services = Vec::new();
 
-    // Parse service_host array first (C reference processes this first at npdmtool.c:522)
+    // Parse service_host array first
     // These are services this program provides (is_host = true)
     if let Some(service_host_value) = json.get("service_host") {
         let service_host_array = service_host_value.as_array().ok_or_else(|| {
@@ -408,7 +408,7 @@ fn parse_service_access(json: &serde_json::Value) -> Result<ServiceAccess, Error
         }
     }
 
-    // Parse service_access array (optional, C reference allows NULL at npdmtool.c:555)
+    // Parse service_access array (optional)
     // These are services this program accesses as a client (is_host = false)
     if let Some(services_value) = json.get("service_access") {
         let services_list = services_value.as_array().ok_or_else(|| {
@@ -429,7 +429,7 @@ fn parse_service_access(json: &serde_json::Value) -> Result<ServiceAccess, Error
 
 /// Parse kernel capabilities from JSON.
 fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapability>, Error> {
-    // kernel_capabilities is required (C reference errors if missing at npdmtool.c:613-618)
+    // kernel_capabilities is a required field
     let kac_value = json
         .get("kernel_capabilities")
         .ok_or_else(|| Error::InvalidArgs("Missing required field 'kernel_capabilities'".into()))?;
@@ -448,8 +448,7 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
 
         match kac_type {
             "kernel_flags" => {
-                // C reference (npdmtool.c:642): value = cJSON_GetObjectItemCaseSensitive(capability, "value")
-                // Then at line 646-658: cJSON_GetU8(value, "highest_thread_priority", ...)
+                // The "value" object holds the per-flag priority and CPU-id fields
                 let value = kac
                     .get("value")
                     .and_then(|v| v.as_object())
@@ -525,8 +524,7 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                 });
             }
             "syscalls" => {
-                // C reference (npdmtool.c:642): value = cJSON_GetObjectItemCaseSensitive(capability, "value")
-                // Then at line 672-676: cJSON_IsObject(value) check, cJSON_ArrayForEach(cur_syscall, value)
+                // The "value" object maps syscall names to their IDs
                 let syscalls_obj =
                     kac.get("value")
                         .and_then(|v| v.as_object())
@@ -557,8 +555,7 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                 capabilities.push(KernelCapability::Syscalls(syscalls));
             }
             "map" => {
-                // C reference (npdmtool.c:642): value = cJSON_GetObjectItemCaseSensitive(capability, "value")
-                // Then at line 705-729: cJSON_IsObject(value), cJSON_GetU64(value, "address", ...)
+                // The "value" object holds the address, size, and permission fields
                 let value = kac
                     .get("value")
                     .and_then(|v| v.as_object())
@@ -586,8 +583,7 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                     source: err,
                 })?;
 
-                // C reference (npdmtool.c:714-717): Both is_ro and is_io are required fields
-                // cJSON_GetBoolean returns failure if field is missing, causing status=0 and build failure
+                // Both is_ro and is_io are required fields
                 let is_ro = value
                     .get("is_ro")
                     .and_then(|v| v.as_bool())
@@ -601,8 +597,7 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                         Error::InvalidArgs("map.value missing required 'is_io' boolean".into())
                     })?;
 
-                // Convert byte addresses to page numbers (>> 12) to match C reference
-                // C reference: npdmtool.c:721,725
+                // Convert byte addresses to page numbers (>> 12)
                 let address = address_bytes >> 12;
                 let size = size_bytes >> 12;
 
@@ -614,8 +609,7 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                 });
             }
             "map_page" => {
-                // C reference (npdmtool.c:642): value = cJSON_GetObjectItemCaseSensitive(capability, "value")
-                // Then at line 732: cJSON_GetU64FromObjectValue(value, &page_address) - value is the direct u64
+                // The "value" field holds the page address directly as a u64
                 let page_str = kac.get("value").and_then(|v| v.as_str()).ok_or_else(|| {
                     Error::InvalidArgs("map_page capability missing 'value'".into())
                 })?;
@@ -626,15 +620,13 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                         source: err,
                     })?;
 
-                // Convert byte address to page number (>> 12) to match C reference
-                // C reference: npdmtool.c:736
+                // Convert byte address to page number (>> 12)
                 let page = page_address_bytes >> 12;
 
                 capabilities.push(KernelCapability::MapPage(page));
             }
             "map_region" => {
-                // C reference (npdmtool.c:642): value = cJSON_GetObjectItemCaseSensitive(capability, "value")
-                // Then at line 744-778: cJSON_IsArray(value), cJSON_ArrayForEach to parse region objects
+                // The "value" field holds an array of region descriptor objects
                 let value_array = kac.get("value").and_then(|v| v.as_array()).ok_or_else(|| {
                     Error::InvalidArgs("map_region capability missing 'value' array".into())
                 })?;
@@ -682,8 +674,7 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                 capabilities.push(KernelCapability::MapRegion(regions));
             }
             "irq_pair" => {
-                // C reference (npdmtool.c:642): value = cJSON_GetObjectItemCaseSensitive(capability, "value")
-                // Then at line 780-784: cJSON_IsArray(value), cJSON_GetArraySize(value) != 2
+                // The "value" field holds an array of exactly 2 IRQ entries
                 let value_array = kac.get("value").and_then(|v| v.as_array()).ok_or_else(|| {
                     Error::InvalidArgs("irq_pair capability missing 'value' array".into())
                 })?;
@@ -694,7 +685,6 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                     ));
                 }
 
-                // C reference: npdmtool.c:788-793
                 // JSON null entries are converted to 0x3FF (10-bit "unused" sentinel)
                 let irq0 = if value_array[0].is_null() {
                     0x3FF
@@ -741,19 +731,16 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                 capabilities.push(KernelCapability::ApplicationType(app_type));
             }
             "min_kernel_version" => {
-                // C reference (npdmtool.c:809-814): Accepts both numeric and hex string values
-                // If cJSON_IsNumber: kern_ver = (u64)value->valueint
-                // Else if cJSON_IsString: cJSON_GetU64FromObjectValue (hex parse via strtoull)
-                // Otherwise error: "Kernel version must be integer or hex strings"
+                // Accepts both numeric and hex string values
                 let value = kac.get("value").ok_or_else(|| {
                     Error::InvalidArgs("min_kernel_version capability missing 'value'".into())
                 })?;
 
                 let min_kernel = if let Some(num) = value.as_u64() {
-                    // Numeric value (matches cJSON_IsNumber path)
+                    // Numeric value
                     num
                 } else if let Some(s) = value.as_str() {
-                    // Hex string value (matches cJSON_GetU64FromObjectValue path)
+                    // Hex string value
                     parse_hex_u64(s).map_err(|err| Error::ParseHex {
                         field: "min_kernel_version".into(),
                         value: s.into(),
@@ -783,8 +770,7 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                 capabilities.push(KernelCapability::HandleTableSize(handle_table_size));
             }
             "debug_flags" => {
-                // C reference (npdmtool.c:642): value = cJSON_GetObjectItemCaseSensitive(capability, "value")
-                // Then at line 825-829: cJSON_IsObject(value), cJSON_GetBoolean(value, "allow_debug", ...)
+                // The "value" object holds the debug flag booleans
                 let value = kac
                     .get("value")
                     .and_then(|v| v.as_object())
@@ -806,7 +792,6 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                     .unwrap_or(false);
 
                 // Mutual exclusion: at most one of the three flags may be set
-                // C reference: npdmtool.c:836
                 let flags_set =
                     (allow_debug as u8) + (force_debug_prod as u8) + (force_debug as u8);
                 if flags_set > 1 {
@@ -836,8 +821,7 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
 
 /// Parse a hexadecimal string with optional 0x/0X prefix.
 ///
-/// Matches C npdmtool's strtoull(..., 16) behavior which accepts both
-/// prefixed ("0x1234") and unprefixed ("1234") hex strings.
+/// Accepts both prefixed ("0x1234") and unprefixed ("1234") hex strings.
 fn parse_hex_u64(s: &str) -> std::result::Result<u64, ParseIntError> {
     let stripped = s
         .strip_prefix("0x")

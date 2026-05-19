@@ -65,16 +65,15 @@ pub fn handle_subcommand(args: Args) -> Result<(), Error> {
         .rodata_attributes(u64::from(descriptor.main_thread_stack_size) as u32)
         .kernel_capabilities(capabilities);
 
-    // Compute flags: raw override takes precedence, otherwise use boolean fields
-    // C reference (elf2kip.c:597): default is 0x7F
-    // C reference (elf2kip.c:246-264): use_secure_memory controls bit 5, immortal controls bit 6
+    // Compute flags: raw override takes precedence, otherwise use boolean fields.
+    // use_secure_memory controls bit 5, immortal controls bit 6.
     if let Some(flags) = descriptor.flags {
         // Raw flags override: use as-is
         builder = builder.flags(flags);
     } else {
         // Compute flags from boolean fields
-        // Start with base flags (0x3F matches linkle default, differs from C reference 0x7F)
-        // Base: bits 0-5 set (compression + Is64Bit + IsAddrSpace32Bit + UseSystemPoolPartition)
+        // Start with base flags 0x3F:
+        // bits 0-5 set (compression + Is64Bit + IsAddrSpace32Bit + UseSystemPoolPartition)
         let mut flags = 0x3F;
 
         // Apply boolean modifiers
@@ -245,7 +244,7 @@ impl From<HexOrNum> for u64 {
 ///
 /// This struct is used for initial JSON parsing. The `kernel_capabilities` field
 /// is parsed separately using manual parsing to handle hex strings and address-to-page
-/// conversion, matching the C reference format.
+/// conversion.
 #[derive(Debug, Deserialize)]
 struct KipDescriptor {
     name: String,
@@ -270,29 +269,27 @@ struct KipDescriptor {
     immortal: bool,
 }
 
-/// Default process category value (matches C reference elf2kip.c:289).
+/// Default process category value.
 fn default_process_category() -> HexOrNum {
     HexOrNum::Num(1)
 }
 
-/// Default use_secure_memory value (matches C reference elf2kip.c:246).
+/// Default use_secure_memory value.
 fn default_use_secure_memory() -> bool {
     true
 }
 
-/// Default immortal value (matches C reference elf2kip.c:257).
+/// Default immortal value.
 fn default_immortal() -> bool {
     true
 }
 
-/// Parse kernel capabilities from JSON, matching C reference format.
+/// Parse kernel capabilities from JSON.
 ///
 /// This function manually parses the `kernel_capabilities` array from JSON to handle:
 /// - Hex string values (e.g., `"0x1A"`) for numeric fields
 /// - Address-to-page conversion for Map and MapPage capabilities
-/// - snake_case type discriminators matching the C reference format
-///
-/// Based on vendor/switch-tools/src/elf2kip.c and cargo-nx/src/cmd/npdmtool.rs
+/// - snake_case type discriminators
 fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapability>, Error> {
     let capabilities_array = json
         .get("kernel_capabilities")
@@ -406,8 +403,7 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
 
-                // Convert byte addresses to page numbers (>> 12) to match C reference
-                // C reference: npdmtool.c:721,725 and elf2kip.c (similar logic)
+                // Convert byte addresses to page numbers (>> 12)
                 let address = address_bytes >> 12;
                 let size = size_bytes >> 12;
 
@@ -439,8 +435,7 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                     ));
                 };
 
-                // Convert byte address to page number (>> 12) to match C reference
-                // C reference: npdmtool.c:736
+                // Convert byte address to page number (>> 12)
                 let page = page_address_bytes >> 12;
 
                 capabilities.push(KernelCapability::MapPage(page));
@@ -485,7 +480,7 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                 capabilities.push(KernelCapability::MapRegion(regions));
             }
             "irq_pair" => {
-                // C reference (elf2kip.c:493-503): value array with 2 elements
+                // The "value" field holds an array of exactly 2 IRQ entries
                 let value_array = kac.get("value").and_then(|v| v.as_array()).ok_or_else(|| {
                     Error::InvalidArgs("irq_pair capability missing 'value' array".into())
                 })?;
@@ -496,7 +491,6 @@ fn parse_kernel_capabilities(json: &serde_json::Value) -> Result<Vec<KernelCapab
                     ));
                 }
 
-                // C reference: elf2kip.c:497-501
                 // JSON null entries are converted to 0x3FF (10-bit "unused" sentinel)
                 let irq0 = if value_array[0].is_null() {
                     0x3FF

@@ -2,7 +2,7 @@
 
 /// Sanitize a filename basename into an identifier valid in both GAS and C.
 ///
-/// Mirrors the `strnident` routine from `devkitPro/general-tools/bin2s.c`:
+/// The sanitization rules are:
 /// - `-`, `.`, and `/` are replaced with `_`.
 /// - Other non-alphanumeric, non-`_` characters are dropped.
 /// - A leading `_` is prepended when the first surviving character is an

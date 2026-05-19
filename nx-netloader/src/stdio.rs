@@ -1,8 +1,7 @@
-//! The _nx-link stdio_ server implementation.
+//! The _nxlink stdio_ server implementation.
 //!
-//! If the NRO app uses the _libnx's nxlink stdio_ feature, it will redirect the stdout and stderr
+//! When the NRO app enables the _nxlink stdio_ feature, it redirects its stdout and stderr
 //! streams over TCP.
-//!
 //!
 //! This allows the NRO app to write to a remote console.
 
@@ -18,9 +17,7 @@ use tokio::{
 /// the data to the specified writer.
 ///
 /// <div class="warning">
-/// The libnx _nxlink_ runtime expects a TCP server listening at port `28771`.
-///
-/// See: https://github.com/switchbrew/libnx/blob/a063ceb19c3878d67eabd895ec7f76b3e93034e8/nx/source/runtime/nxlink_stdio.c#L41-L44
+/// The _nxlink stdio_ runtime on the console expects a TCP server listening at port `28771`.
 /// </div>
 pub async fn start_server<A: ToSocketAddrs>(addr: A) -> io::Result<()> {
     let listener = TcpListener::bind(&addr).await?;

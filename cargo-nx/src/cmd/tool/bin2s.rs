@@ -73,8 +73,8 @@ pub enum Error {
 
 /// A single input file resolved to its sanitized identifiers and contents.
 ///
-/// Holds two identifiers because the C tool deliberately uses different
-/// sanitization rules on the asm and header sides under `--apple-llvm`.
+/// Holds two identifiers because the asm and header sides deliberately use
+/// different sanitization rules under `--apple-llvm`.
 struct Entry {
     asm_name: String,
     header_name: String,
@@ -96,8 +96,8 @@ fn read_entries(inputs: &[PathBuf], apple_llvm: bool) -> Result<Vec<Entry>, Erro
 
         let asm_name = sanitize_identifier(basename, apple_llvm)
             .ok_or_else(|| Error::InvalidFileName { path: path.clone() })?;
-        // The C tool always uses non-apple-llvm sanitization for headers,
-        // even when the asm side prepends '_'. Replicate that asymmetry.
+        // Headers always use non-apple-llvm sanitization, even when the asm
+        // side prepends '_' — this asymmetry is intentional.
         let header_name = sanitize_identifier(basename, false)
             .ok_or_else(|| Error::InvalidFileName { path: path.clone() })?;
 
@@ -167,9 +167,9 @@ fn write_asm_to<W: Write>(
 
 /// Emit a single self-contained asm block for `entry`.
 ///
-/// Block layout matches devkitPro's `bin2s` byte-for-byte: section/`.balign`
-/// preamble, `.byte` rows, end label, optional `_size` constant (only when no
-/// header is being generated), and the GNU-stack note trailer.
+/// Block layout: section/`.balign` preamble, `.byte` rows, end label, optional
+/// `_size` constant (only when no header is being generated), and the GNU-stack
+/// note trailer.
 fn write_asm_block<W: Write>(
     writer: &mut W,
     entry: &Entry,
@@ -221,7 +221,7 @@ fn write_asm_block<W: Write>(
 /// Emit `bytes` as `.byte` rows of up to 16 right-aligned decimal values each.
 ///
 /// Each new row is prefixed with `\t.byte ` and values are comma-separated
-/// with no trailing comma, matching the C tool's `%3u` output format.
+/// with no trailing comma, each formatted as a 3-wide right-aligned decimal.
 fn write_byte_lines_decimal<W: Write>(writer: &mut W, bytes: &[u8]) -> io::Result<()> {
     writer.write_all(b"\t.byte ")?;
 

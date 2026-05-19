@@ -1,10 +1,7 @@
 //! The `cargo nx link` subcommand.
 //!
-//! This is a Rust implementation of the `nxlink` command-line tool.
-//!
-//! It sends a file to the Nintendo Switch using the _nx-hbmenu netloader_.
-//!
-//! See: https://github.com/switchbrew/switch-tools/blob/22756068dd0ed6ff9734c59cb4f99ebd3f62555b/src/nxlink.c
+//! Sends a homebrew NRO to a Nintendo Switch console over the network using the
+//! netloader protocol.
 
 use std::{
     io,

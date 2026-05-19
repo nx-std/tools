@@ -23,15 +23,11 @@ use crate::{CLIENT_PORT, SERVER_PORT};
 ///
 /// If the _netloader_ was compiled with `PING_ENABLED`, the server will be listening on UDP port
 /// `28280` for this message.
-///
-/// See: https://github.com/switchbrew/nx-hbmenu/blob/b7bcf3a9ece8f4717acabc8b9510e6a31a3efc1c/common/netloader.c#L633-L646
 const PING_MESSAGE: &[u8] = b"nxboot";
 
 /// The discovery message response to receive.
 ///
 /// The _netloader_ server responds to the discovery message with this message.
-///
-/// See: https://github.com/switchbrew/nx-hbmenu/blob/b7bcf3a9ece8f4717acabc8b9510e6a31a3efc1c/common/netloader.c#L643
 const PONG_MESSAGE: &[u8] = b"bootnx";
 
 /// The broadcast address to send the discovery message.
@@ -42,8 +38,6 @@ const BROADCAST_ADDR: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::BROADCAST, SERV
 /// The address to bind for receiving the discovery response.
 ///
 /// The _netloader_ server responds to the discovery message on UDP port `28771`.
-///
-/// See: https://github.com/switchbrew/nx-hbmenu/blob/b7bcf3a9ece8f4717acabc8b9510e6a31a3efc1c/common/netloader.c#L534-539
 const RECEIVE_ADDR: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, CLIENT_PORT);
 
 /// Discover the _neloader_ server in the network.
