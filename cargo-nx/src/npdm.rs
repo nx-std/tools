@@ -24,102 +24,229 @@ use nx_object::write::npdm::{
 /// A complete NPDM descriptor as written in the `main.npdm` JSON file.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "json-schema", schemars(example = serde_json::json!({
+    "name": "MyApp",
+    "program_id": "0x0100000000010000",
+    "main_thread_stack_size": "0x100000",
+    "main_thread_priority": 44,
+    "default_cpu_id": 0,
+    "address_space_type": 3,
+    "is_64_bit": true,
+    "is_retail": false,
+    "pool_partition": 0,
+    "program_id_range_min": "0x0",
+    "program_id_range_max": "0xffffffffffffffff",
+    "filesystem_access": { "permissions": "0xffffffffffffffff" },
+    "service_access": ["fsp-srv", "hid"],
+    "kernel_capabilities": []
+})))]
 pub struct NpdmDescriptor {
-    /// Program name (UTF-8, truncated to 16 bytes including the null terminator).
+    /// Process name written into the 16-byte META name field (UTF-8,
+    /// null-terminated, so at most 15 usable bytes).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Process name (at most 15 bytes).")
+    )]
     pub name: String,
 
-    /// Program (title) ID.
+    /// 64-bit program (title) ID identifying the process; also recorded as the
+    /// ACI0 program ID.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "64-bit program (title) ID.")
+    )]
     #[serde(alias = "title_id")]
     pub program_id: HexU64,
 
-    /// Main thread stack size in bytes (must fit in a `u32`).
+    /// Main thread stack size in bytes; reserved at process creation and must
+    /// fit in a `u32`.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Main thread stack size in bytes.")
+    )]
     pub main_thread_stack_size: HexU64,
 
-    /// Main thread priority (0-63, higher = lower priority).
+    /// Initial priority of the main thread (0-63; 0 is the highest priority).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Main thread priority (0-63; 0 = highest).")
+    )]
     pub main_thread_priority: u8,
 
-    /// CPU core the main thread starts on (0-3).
+    /// Index of the CPU core the main thread starts on (0-3).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Main thread CPU core (0-3).")
+    )]
     pub default_cpu_id: u8,
 
-    /// Program version (defaults to 0).
+    /// Program version recorded in the META header (defaults to 0).
+    #[cfg_attr(feature = "json-schema", schemars(description = "Program version."))]
     #[serde(default, alias = "process_category")]
     pub version: HexU64,
 
-    /// Address space type (0-3).
+    /// Virtual address-space layout (0 = 32-bit, 1 = 36-bit, 2 = 32-bit without
+    /// reserved region, 3 = 39-bit); packed into bits 1-2 of the META flags.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Address-space type (0-3).")
+    )]
     pub address_space_type: u8,
 
-    /// Whether the program is 64-bit.
+    /// Whether the process executes 64-bit (AArch64) code; bit 0 of the META flags.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Whether the process runs 64-bit code.")
+    )]
     pub is_64_bit: bool,
 
-    /// Optimize memory allocation flag.
+    /// Enable the memory-allocation optimization; bit 4 of the META flags.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Optimize memory allocation (META flag).")
+    )]
     #[serde(default)]
     pub optimize_memory_allocation: bool,
 
-    /// Disable device address space merge flag.
+    /// Disable merging of the device address space; bit 5 of the META flags.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Disable device address-space merge (META flag).")
+    )]
     #[serde(default)]
     pub disable_device_address_space_merge: bool,
 
-    /// Enable alias region extra size flag.
+    /// Grant the alias (heap) region its extra reserved size; bit 6 of the META flags.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Grant the alias region extra size (META flag).")
+    )]
     #[serde(default)]
     pub enable_alias_region_extra_size: bool,
 
-    /// Prevent code reads flag.
+    /// Forbid the process from reading its own executable pages; bit 7 of the META flags.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Forbid the process reading its own code (META flag).")
+    )]
     #[serde(default)]
     pub prevent_code_reads: bool,
 
-    /// Whether the ACID is flagged for retail.
+    /// Marks the ACID as production-signed; bit 0 of the ACID flags.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Mark the ACID as production-signed.")
+    )]
     pub is_retail: bool,
 
-    /// Memory pool partition (0-3).
+    /// Memory pool partition the process draws from (0 = application, 1 = applet,
+    /// 2 = system, 3 = system non-secure); bits 2-3 of the ACID flags.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Memory pool partition (0-3).")
+    )]
     pub pool_partition: u8,
 
-    /// Lowest program ID the ACID permits.
+    /// Inclusive lower bound of the program-ID range the ACID authorizes.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Inclusive lower bound of the authorized program-ID range.")
+    )]
     #[serde(alias = "title_id_range_min")]
     pub program_id_range_min: HexU64,
 
-    /// Highest program ID the ACID permits.
+    /// Inclusive upper bound of the program-ID range the ACID authorizes.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Inclusive upper bound of the authorized program-ID range.")
+    )]
     #[serde(alias = "title_id_range_max")]
     pub program_id_range_max: HexU64,
 
-    /// Filesystem access control.
+    /// Filesystem access control (the FAC/FAH sections).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Filesystem access control (FAC).")
+    )]
     pub filesystem_access: FilesystemAccessDescriptor,
 
-    /// Services this program provides (hosts).
+    /// Services the process may register/host, written into the service access
+    /// control (SAC).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Service names the process may host.")
+    )]
     #[serde(default)]
     pub service_host: Vec<String>,
 
-    /// Services this program accesses as a client.
+    /// Services the process may connect to as a client (SAC).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Service names the process may use as a client.")
+    )]
     #[serde(default)]
     pub service_access: Vec<String>,
 
-    /// Kernel capabilities.
+    /// Kernel capabilities (KAC) granting SVCs, memory maps, IRQs and other
+    /// kernel-level permissions.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Kernel capabilities (KAC).")
+    )]
     pub kernel_capabilities: Vec<KernelCapabilityDescriptor>,
 }
 
-/// Filesystem access control section of the descriptor.
+/// Filesystem access control descriptor (the FAC/FAH sections).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "json-schema", schemars(example = serde_json::json!({
+    "permissions": "0xffffffffffffffff"
+})))]
 pub struct FilesystemAccessDescriptor {
-    /// Bitmask of permitted filesystem operations.
+    /// 64-bit bitmask of permitted filesystem operations and mount points.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Bitmask of permitted filesystem operations.")
+    )]
     pub permissions: HexU64,
 
-    /// Content owner IDs (ACI0 list form).
+    /// Content owner IDs the process is allowed to access (ACI0 list form).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Accessible content owner IDs.")
+    )]
     #[serde(default)]
     pub content_owner_ids: Vec<HexU64>,
 
-    /// Save data owner IDs (ACI0 list form).
+    /// Save-data owners the process is allowed to access (ACI0 list form).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Accessible save-data owners.")
+    )]
     #[serde(default)]
     pub save_data_owner_ids: Vec<SaveDataOwnerIdDescriptor>,
 }
 
-/// A single save-data owner ID entry.
+/// A save-data owner the process is permitted to access.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "json-schema", schemars(example = serde_json::json!({
+    "accessibility": 3,
+    "id": "0x0100000000010000"
+})))]
 pub struct SaveDataOwnerIdDescriptor {
-    /// Accessibility level (0-3).
+    /// Access level to the owner's save data (1 = read, 2 = write, 3 = read/write).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Access level (1 = read, 2 = write, 3 = read/write).")
+    )]
     pub accessibility: u8,
 
-    /// Owner ID.
+    /// Program ID of the save-data owner.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Program ID of the save-data owner.")
+    )]
     pub id: HexU64,
 }
 

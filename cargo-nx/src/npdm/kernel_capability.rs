@@ -21,56 +21,152 @@ const UNUSED_IRQ: u16 = 0x3FF;
 /// A single kernel capability as written in the descriptor JSON.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "json-schema", schemars(
+    example = serde_json::json!({
+        "type": "kernel_flags",
+        "value": { "highest_thread_priority": 0, "lowest_thread_priority": 63, "highest_cpu_id": 3, "lowest_cpu_id": 0 }
+    }),
+    example = serde_json::json!({ "type": "syscalls", "value": { "svcSendSyncRequest": "0x21" } }),
+    example = serde_json::json!({
+        "type": "map",
+        "value": { "address": "0x1000000", "size": "0x2000", "is_ro": false, "is_io": true }
+    }),
+))]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum KernelCapabilityDescriptor {
-    /// Thread priority range and CPU affinity bounds.
+    /// Allowed thread-priority range and CPU-core affinity mask for the process.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Thread-priority range and CPU-core mask.")
+    )]
     KernelFlags(KernelFlagsValue),
-    /// Allowed system calls, mapping name to numeric ID.
+    /// Allowed supervisor calls (SVCs), mapping each name to its SVC number.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Allowed supervisor calls (name to SVC number).")
+    )]
     Syscalls(BTreeMap<String, U64OrHex>),
-    /// Memory region mapping with permissions; addresses are byte addresses.
+    /// Maps a physical memory range into the process; addresses are byte values
+    /// that are lowered to page numbers.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Map a physical memory range (byte addresses).")
+    )]
     Map(MapValue),
-    /// Single-page mapping permission; the value is a byte address.
+    /// Maps a single physical page into the process; the value is a byte address.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Map a single physical page (byte address).")
+    )]
     MapPage(HexU64),
-    /// Up to three predefined memory region descriptors.
+    /// Maps up to three predefined memory regions.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Map up to three predefined regions.")
+    )]
     MapRegion(Vec<MapRegionValue>),
-    /// A pair of allowed IRQ numbers; `null` marks an unused slot.
+    /// Allows up to two hardware interrupt (IRQ) numbers; `null` leaves a slot
+    /// unused.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Allow up to two IRQ numbers (null = unused).")
+    )]
     IrqPair([Option<u16>; 2]),
-    /// Application type (applet, application, system module).
+    /// Process application type (0-7), e.g. system module, application or applet.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Application type (0-7).")
+    )]
     ApplicationType(u16),
-    /// Minimum required kernel version.
+    /// Minimum kernel version the process requires (packed major/minor).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Minimum required kernel version.")
+    )]
     MinKernelVersion(U64OrHex),
-    /// Maximum number of kernel handles.
+    /// Maximum number of kernel handles the process may hold.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Maximum kernel handle count.")
+    )]
     HandleTableSize(u16),
-    /// Debug permission flags (mutually exclusive).
+    /// Debug permissions; at most one flag may be set.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Debug permissions (mutually exclusive).")
+    )]
     DebugFlags(DebugFlagsValue),
 }
 
 /// Value object for [`KernelCapabilityDescriptor::KernelFlags`].
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "json-schema", schemars(example = serde_json::json!({
+    "highest_thread_priority": 0,
+    "lowest_thread_priority": 63,
+    "highest_cpu_id": 3,
+    "lowest_cpu_id": 0
+})))]
 pub struct KernelFlagsValue {
-    /// Highest allowed thread priority (0-63, higher = lower priority).
+    /// Numerically highest priority value the process may use (0-63; 0 is the
+    /// highest scheduling priority).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Highest priority value allowed (0-63; 0 = highest).")
+    )]
     pub highest_thread_priority: u8,
-    /// Lowest allowed thread priority (0-63).
+    /// Numerically lowest priority value the process may use (0-63).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Lowest priority value allowed (0-63).")
+    )]
     pub lowest_thread_priority: u8,
-    /// Highest allowed CPU core ID.
+    /// Highest CPU core ID the process may run on.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Highest CPU core ID allowed.")
+    )]
     pub highest_cpu_id: u8,
-    /// Lowest allowed CPU core ID.
+    /// Lowest CPU core ID the process may run on.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Lowest CPU core ID allowed.")
+    )]
     pub lowest_cpu_id: u8,
 }
 
 /// Value object for [`KernelCapabilityDescriptor::Map`].
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "json-schema", schemars(example = serde_json::json!({
+    "address": "0x1000000",
+    "size": "0x2000",
+    "is_ro": false,
+    "is_io": true
+})))]
 pub struct MapValue {
-    /// Byte address to map.
+    /// Physical byte address to map (page-aligned; lowered to a page number).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Physical byte address to map (page-aligned).")
+    )]
     pub address: HexU64,
-    /// Size of the mapping in bytes.
+    /// Mapping size in bytes (a multiple of the page size).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Mapping size in bytes.")
+    )]
     pub size: HexU64,
-    /// Read-only flag (defaults to `false`).
+    /// Map the range as read-only (defaults to `false`).
+    #[cfg_attr(feature = "json-schema", schemars(description = "Map as read-only."))]
     #[serde(default)]
     pub is_ro: bool,
-    /// I/O flag (device memory vs normal memory); defaults to `false`.
+    /// Map the range as device/MMIO memory rather than normal memory (defaults
+    /// to `false`).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Map as device/MMIO memory.")
+    )]
     #[serde(default)]
     pub is_io: bool,
 }
@@ -78,24 +174,49 @@ pub struct MapValue {
 /// Value object for an entry of [`KernelCapabilityDescriptor::MapRegion`].
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "json-schema", schemars(example = serde_json::json!({
+    "region_type": 1,
+    "is_ro": true
+})))]
 pub struct MapRegionValue {
-    /// Region type (0-63).
+    /// Predefined memory-region selector (0-63).
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Memory-region selector (0-63).")
+    )]
     pub region_type: u8,
-    /// Read-only flag.
+    /// Map the region as read-only.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Map the region as read-only.")
+    )]
     pub is_ro: bool,
 }
 
 /// Value object for [`KernelCapabilityDescriptor::DebugFlags`].
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "json-schema", schemars(example = serde_json::json!({ "allow_debug": true })))]
 pub struct DebugFlagsValue {
-    /// Allow debugging this process.
+    /// Permit a debugger to attach to this process.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Permit a debugger to attach.")
+    )]
     #[serde(default)]
     pub allow_debug: bool,
-    /// Force production debugging mode.
+    /// Force the process debuggable only on production units.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Force debuggable on production units.")
+    )]
     #[serde(default)]
     pub force_debug_prod: bool,
-    /// Force debugging this process.
+    /// Force the process to be debuggable.
+    #[cfg_attr(
+        feature = "json-schema",
+        schemars(description = "Force the process debuggable.")
+    )]
     #[serde(default)]
     pub force_debug: bool,
 }
