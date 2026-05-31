@@ -60,3 +60,35 @@ jobs:
           cache: false
 
       - run: cargo +nightly fmt --all -- --check
+
+  # Check generated schemas under docs/schemas/ are up to date
+  gen-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          cache: true
+          rustflags: ''
+
+      - name: Setup just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+
+      - name: Run code generation
+        run: just gen
+
+      - name: Check for uncommitted changes
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            printf "Generated schemas are out of date. Please run 'just gen' and commit the changes.\n"
+
+            printf "\nFiles with changes:\n"
+            git status --porcelain
+
+            printf "\nDetailed diff:\n"
+            git diff --color=always
+
+            exit 1
+          fi
