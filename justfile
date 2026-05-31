@@ -90,6 +90,28 @@ test-crate CRATE *EXTRA_FLAGS:
     fi
 
 
+## Codegen
+
+alias codegen := gen
+
+GEN_SCHEMAS_OUTDIR := "docs/schemas"
+
+# Generate the NPDM descriptor JSON schema
+[group: 'codegen']
+gen-npdm-schema:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Trigger the cargo-nx-gen build script with the schema-generation cfg flag.
+    RUSTFLAGS="--cfg gen_schema_npdm" cargo check -p cargo-nx-gen
+    mkdir -p {{GEN_SCHEMAS_OUTDIR}}
+    cp -f $(ls -t target/debug/build/cargo-nx-gen-*/out/schema.json | head -1) {{GEN_SCHEMAS_OUTDIR}}/npdm.spec.json
+    echo "  {{GEN_SCHEMAS_OUTDIR}}/npdm.spec.json"
+
+# Run all codegen tasks
+[group: 'codegen']
+gen: gen-npdm-schema
+
+
 ## Clean
 
 alias clean := cargo-clean

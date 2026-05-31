@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::npdm::{self, NpdmDescriptor};
+use cargo_nx::npdm::{self, NpdmDescriptor};
 
 /// Build an NPDM image from a JSON descriptor file on disk.
 pub fn build_npdm_from_file(json_path: &Path) -> Result<Vec<u8>, Error> {

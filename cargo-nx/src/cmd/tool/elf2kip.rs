@@ -4,12 +4,11 @@ use std::{
     path::PathBuf,
 };
 
+use cargo_nx::npdm::{self, KernelCapabilityDescriptor, U64OrHex};
 use nx_object::{
     elf::{self, ElfSegments},
     write::{kip, npdm::KernelCapability},
 };
-
-use crate::npdm::{self, KernelCapabilityDescriptor, U64OrHex};
 
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     // Load and parse ELF file
@@ -187,38 +186,44 @@ pub enum Error {
     WriteOutput { path: PathBuf, source: io::Error },
 }
 
-/// JSON descriptor for KIP1 metadata.
+/// JSON descriptor for a KIP1 (kernel initial process) image.
 #[derive(Debug, serde::Deserialize)]
 struct KipDescriptor {
+    /// Process name embedded in the KIP1 header (up to 12 bytes).
     name: String,
 
+    /// 64-bit program (title) ID of the process.
     #[serde(alias = "program_id")]
     title_id: U64OrHex,
 
+    /// Main thread stack size in bytes.
     main_thread_stack_size: U64OrHex,
 
+    /// Initial main-thread priority (0-63; 0 is the highest priority).
     main_thread_priority: u8,
 
+    /// Index of the CPU core the main thread starts on (0-3).
     default_cpu_id: u8,
 
+    /// KIP1 process category (defaults to 1).
     #[serde(alias = "version", default = "default_process_category")]
     process_category: U64OrHex,
 
-    /// Optional raw flags byte. When present, overrides the boolean flag fields.
+    /// Optional raw KIP1 flags byte. When present, overrides the boolean flag fields.
     #[serde(default)]
     flags: Option<u8>,
 
-    /// Controls bit 5 (UseSystemPoolPartition) of the flags byte; defaults to `true`.
-    /// Ignored if the raw `flags` field is present.
+    /// Sets bit 5 of the KIP1 flags byte (use secure memory); defaults to `true`.
+    /// Ignored when the raw `flags` field is present.
     #[serde(default = "default_use_secure_memory")]
     use_secure_memory: bool,
 
-    /// Controls bit 6 (Immortal) of the flags byte; defaults to `true`.
-    /// Ignored if the raw `flags` field is present.
+    /// Sets bit 6 of the KIP1 flags byte, marking the process immortal (it cannot
+    /// be terminated); defaults to `true`. Ignored when the raw `flags` field is present.
     #[serde(default = "default_immortal")]
     immortal: bool,
 
-    /// Kernel capabilities, encoded into the KIP1 capability descriptors.
+    /// Kernel capabilities (KAC) encoded into the KIP1 capability descriptors.
     kernel_capabilities: Vec<KernelCapabilityDescriptor>,
 }
 

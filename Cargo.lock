@@ -170,6 +170,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cargo-nx-gen"
+version = "0.2.0"
+dependencies = [
+ "cargo-nx",
+ "schemars",
+ "serde_json",
+]
+
+[[package]]
 name = "cargo-platform"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

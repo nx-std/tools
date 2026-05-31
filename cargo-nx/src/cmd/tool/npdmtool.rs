@@ -1,6 +1,6 @@
 use std::{io, path::PathBuf};
 
-use crate::npdm::{self, NpdmDescriptor};
+use cargo_nx::npdm::{self, NpdmDescriptor};
 
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     let json_content = std::fs::read_to_string(&args.json_file).map_err(|err| Error::ReadJson {

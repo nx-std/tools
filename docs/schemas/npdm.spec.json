@@ -1,0 +1,611 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NpdmDescriptor",
+  "description": "A complete NPDM descriptor as written in the `main.npdm` JSON file.",
+  "type": "object",
+  "properties": {
+    "address_space_type": {
+      "description": "Address-space type (0-3).",
+      "type": "integer",
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 0
+    },
+    "default_cpu_id": {
+      "description": "Main thread CPU core (0-3).",
+      "type": "integer",
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 0
+    },
+    "disable_device_address_space_merge": {
+      "description": "Disable device address-space merge (META flag).",
+      "type": "boolean",
+      "default": false
+    },
+    "enable_alias_region_extra_size": {
+      "description": "Grant the alias region extra size (META flag).",
+      "type": "boolean",
+      "default": false
+    },
+    "filesystem_access": {
+      "description": "Filesystem access control (FAC).",
+      "$ref": "#/$defs/FilesystemAccessDescriptor"
+    },
+    "is_64_bit": {
+      "description": "Whether the process runs 64-bit code.",
+      "type": "boolean"
+    },
+    "is_retail": {
+      "description": "Mark the ACID as production-signed.",
+      "type": "boolean"
+    },
+    "kernel_capabilities": {
+      "description": "Kernel capabilities (KAC).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/KernelCapabilityDescriptor"
+      }
+    },
+    "main_thread_priority": {
+      "description": "Main thread priority (0-63; 0 = highest).",
+      "type": "integer",
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 0
+    },
+    "main_thread_stack_size": {
+      "description": "Main thread stack size in bytes.",
+      "type": "string",
+      "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+    },
+    "name": {
+      "description": "Process name (at most 15 bytes).",
+      "type": "string"
+    },
+    "optimize_memory_allocation": {
+      "description": "Optimize memory allocation (META flag).",
+      "type": "boolean",
+      "default": false
+    },
+    "pool_partition": {
+      "description": "Memory pool partition (0-3).",
+      "type": "integer",
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 0
+    },
+    "prevent_code_reads": {
+      "description": "Forbid the process reading its own code (META flag).",
+      "type": "boolean",
+      "default": false
+    },
+    "program_id": {
+      "description": "64-bit program (title) ID.",
+      "type": "string",
+      "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+    },
+    "program_id_range_max": {
+      "description": "Inclusive upper bound of the authorized program-ID range.",
+      "type": "string",
+      "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+    },
+    "program_id_range_min": {
+      "description": "Inclusive lower bound of the authorized program-ID range.",
+      "type": "string",
+      "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+    },
+    "service_access": {
+      "description": "Service names the process may use as a client.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
+    },
+    "service_host": {
+      "description": "Service names the process may host.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
+    },
+    "version": {
+      "description": "Program version.",
+      "type": "string",
+      "default": "0x0",
+      "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+    }
+  },
+  "examples": [
+    {
+      "address_space_type": 3,
+      "default_cpu_id": 0,
+      "filesystem_access": {
+        "permissions": "0xffffffffffffffff"
+      },
+      "is_64_bit": true,
+      "is_retail": false,
+      "kernel_capabilities": [],
+      "main_thread_priority": 44,
+      "main_thread_stack_size": "0x100000",
+      "name": "MyApp",
+      "pool_partition": 0,
+      "program_id": "0x0100000000010000",
+      "program_id_range_max": "0xffffffffffffffff",
+      "program_id_range_min": "0x0",
+      "service_access": [
+        "fsp-srv",
+        "hid"
+      ]
+    }
+  ],
+  "required": [
+    "name",
+    "program_id",
+    "main_thread_stack_size",
+    "main_thread_priority",
+    "default_cpu_id",
+    "address_space_type",
+    "is_64_bit",
+    "is_retail",
+    "pool_partition",
+    "program_id_range_min",
+    "program_id_range_max",
+    "filesystem_access",
+    "kernel_capabilities"
+  ],
+  "$defs": {
+    "DebugFlagsValue": {
+      "description": "Value object for [`KernelCapabilityDescriptor::DebugFlags`].",
+      "type": "object",
+      "properties": {
+        "allow_debug": {
+          "description": "Permit a debugger to attach.",
+          "type": "boolean",
+          "default": false
+        },
+        "force_debug": {
+          "description": "Force the process debuggable.",
+          "type": "boolean",
+          "default": false
+        },
+        "force_debug_prod": {
+          "description": "Force debuggable on production units.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "examples": [
+        {
+          "allow_debug": true
+        }
+      ]
+    },
+    "FilesystemAccessDescriptor": {
+      "description": "Filesystem access control descriptor (the FAC/FAH sections).",
+      "type": "object",
+      "properties": {
+        "content_owner_ids": {
+          "description": "Accessible content owner IDs.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "description": "64-bit unsigned integer encoded as a hexadecimal string",
+            "type": "string",
+            "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+          }
+        },
+        "permissions": {
+          "description": "Bitmask of permitted filesystem operations.",
+          "type": "string",
+          "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+        },
+        "save_data_owner_ids": {
+          "description": "Accessible save-data owners.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SaveDataOwnerIdDescriptor"
+          }
+        }
+      },
+      "examples": [
+        {
+          "permissions": "0xffffffffffffffff"
+        }
+      ],
+      "required": [
+        "permissions"
+      ]
+    },
+    "KernelCapabilityDescriptor": {
+      "description": "A single kernel capability as written in the descriptor JSON.",
+      "examples": [
+        {
+          "type": "kernel_flags",
+          "value": {
+            "highest_cpu_id": 3,
+            "highest_thread_priority": 0,
+            "lowest_cpu_id": 0,
+            "lowest_thread_priority": 63
+          }
+        },
+        {
+          "type": "syscalls",
+          "value": {
+            "svcSendSyncRequest": "0x21"
+          }
+        },
+        {
+          "type": "map",
+          "value": {
+            "address": "0x1000000",
+            "is_io": true,
+            "is_ro": false,
+            "size": "0x2000"
+          }
+        }
+      ],
+      "oneOf": [
+        {
+          "description": "Thread-priority range and CPU-core mask.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "kernel_flags"
+            },
+            "value": {
+              "$ref": "#/$defs/KernelFlagsValue"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "description": "Allowed supervisor calls (name to SVC number).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "syscalls"
+            },
+            "value": {
+              "type": "object",
+              "additionalProperties": {
+                "description": "64-bit unsigned integer as a JSON number or hexadecimal string",
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+                  }
+                ]
+              }
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "description": "Map a physical memory range (byte addresses).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "map"
+            },
+            "value": {
+              "$ref": "#/$defs/MapValue"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "description": "Map a single physical page (byte address).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "map_page"
+            },
+            "value": {
+              "description": "64-bit unsigned integer encoded as a hexadecimal string",
+              "type": "string",
+              "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "description": "Map up to three predefined regions.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "map_region"
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MapRegionValue"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "description": "Allow up to two IRQ numbers (null = unused).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "irq_pair"
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "maximum": 65535,
+                "minimum": 0
+              },
+              "maxItems": 2,
+              "minItems": 2
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "description": "Application type (0-7).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "application_type"
+            },
+            "value": {
+              "type": "integer",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "description": "Minimum required kernel version.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "min_kernel_version"
+            },
+            "value": {
+              "description": "64-bit unsigned integer as a JSON number or hexadecimal string",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "description": "Maximum kernel handle count.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "handle_table_size"
+            },
+            "value": {
+              "type": "integer",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "description": "Debug permissions (mutually exclusive).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "debug_flags"
+            },
+            "value": {
+              "$ref": "#/$defs/DebugFlagsValue"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        }
+      ]
+    },
+    "KernelFlagsValue": {
+      "description": "Value object for [`KernelCapabilityDescriptor::KernelFlags`].",
+      "type": "object",
+      "properties": {
+        "highest_cpu_id": {
+          "description": "Highest CPU core ID allowed.",
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "highest_thread_priority": {
+          "description": "Highest priority value allowed (0-63; 0 = highest).",
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "lowest_cpu_id": {
+          "description": "Lowest CPU core ID allowed.",
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "lowest_thread_priority": {
+          "description": "Lowest priority value allowed (0-63).",
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        }
+      },
+      "examples": [
+        {
+          "highest_cpu_id": 3,
+          "highest_thread_priority": 0,
+          "lowest_cpu_id": 0,
+          "lowest_thread_priority": 63
+        }
+      ],
+      "required": [
+        "highest_thread_priority",
+        "lowest_thread_priority",
+        "highest_cpu_id",
+        "lowest_cpu_id"
+      ]
+    },
+    "MapRegionValue": {
+      "description": "Value object for an entry of [`KernelCapabilityDescriptor::MapRegion`].",
+      "type": "object",
+      "properties": {
+        "is_ro": {
+          "description": "Map the region as read-only.",
+          "type": "boolean"
+        },
+        "region_type": {
+          "description": "Memory-region selector (0-63).",
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        }
+      },
+      "examples": [
+        {
+          "is_ro": true,
+          "region_type": 1
+        }
+      ],
+      "required": [
+        "region_type",
+        "is_ro"
+      ]
+    },
+    "MapValue": {
+      "description": "Value object for [`KernelCapabilityDescriptor::Map`].",
+      "type": "object",
+      "properties": {
+        "address": {
+          "description": "Physical byte address to map (page-aligned).",
+          "type": "string",
+          "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+        },
+        "is_io": {
+          "description": "Map as device/MMIO memory.",
+          "type": "boolean",
+          "default": false
+        },
+        "is_ro": {
+          "description": "Map as read-only.",
+          "type": "boolean",
+          "default": false
+        },
+        "size": {
+          "description": "Mapping size in bytes.",
+          "type": "string",
+          "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+        }
+      },
+      "examples": [
+        {
+          "address": "0x1000000",
+          "is_io": true,
+          "is_ro": false,
+          "size": "0x2000"
+        }
+      ],
+      "required": [
+        "address",
+        "size"
+      ]
+    },
+    "SaveDataOwnerIdDescriptor": {
+      "description": "A save-data owner the process is permitted to access.",
+      "type": "object",
+      "properties": {
+        "accessibility": {
+          "description": "Access level (1 = read, 2 = write, 3 = read/write).",
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "id": {
+          "description": "Program ID of the save-data owner.",
+          "type": "string",
+          "pattern": "^(0[xX])?[0-9a-fA-F]+$"
+        }
+      },
+      "examples": [
+        {
+          "accessibility": 3,
+          "id": "0x0100000000010000"
+        }
+      ],
+      "required": [
+        "accessibility",
+        "id"
+      ]
+    }
+  }
+}
