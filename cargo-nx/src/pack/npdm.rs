@@ -2,9 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use nx_object::write::npdm::NpdmBuilder;
-
-use crate::cmd::tool::npdmtool::{self, parse_npdm_json_value};
+use crate::npdm::{self, NpdmDescriptor};
 
 /// Build an NPDM image from a JSON descriptor file on disk.
 pub fn build_npdm_from_file(json_path: &Path) -> Result<Vec<u8>, Error> {
@@ -12,38 +10,43 @@ pub fn build_npdm_from_file(json_path: &Path) -> Result<Vec<u8>, Error> {
         path: json_path.to_path_buf(),
         source: err,
     })?;
-    let json: serde_json::Value =
+    let descriptor: NpdmDescriptor =
         serde_json::from_str(&json_content).map_err(|err| Error::ParseJson {
             path: json_path.to_path_buf(),
             source: err,
         })?;
-    build_npdm_from_value(&json)
+    descriptor.build().map_err(Error::Build)
 }
 
 /// Build an NPDM image from an already-parsed JSON value.
 pub fn build_npdm_from_value(json: &serde_json::Value) -> Result<Vec<u8>, Error> {
-    let (metadata, aci, acid) = parse_npdm_json_value(json).map_err(Error::Parse)?;
-    Ok(NpdmBuilder::new(metadata)
-        .with_aci(aci)
-        .with_acid(acid)
-        .build())
+    let descriptor =
+        <NpdmDescriptor as serde::Deserialize>::deserialize(json).map_err(Error::ParseValue)?;
+    descriptor.build().map_err(Error::Build)
 }
 
 /// Errors from NPDM packaging.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Failed to read the JSON descriptor file from disk.
     #[error("Failed to read JSON file '{}'", path.display())]
     ReadJson {
         path: PathBuf,
         source: std::io::Error,
     },
 
+    /// Failed to deserialize the JSON descriptor file.
     #[error("Failed to parse JSON file '{}'", path.display())]
     ParseJson {
         path: PathBuf,
         source: serde_json::Error,
     },
 
-    #[error("Failed to parse NPDM descriptor")]
-    Parse(#[source] npdmtool::Error),
+    /// Failed to deserialize the in-memory NPDM descriptor value.
+    #[error("Failed to deserialize the NPDM descriptor")]
+    ParseValue(#[source] serde_json::Error),
+
+    /// Failed to build the NPDM image from the descriptor.
+    #[error("Failed to build the NPDM image from the descriptor")]
+    Build(#[source] npdm::Error),
 }

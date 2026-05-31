@@ -3,6 +3,7 @@
 use tracing_subscriber::EnvFilter;
 
 mod cmd;
+mod npdm;
 mod pack;
 mod ui;
 

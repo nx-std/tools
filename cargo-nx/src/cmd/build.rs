@@ -743,11 +743,9 @@ fn convert_inline_npdm_to_json(inline: &InlineNpdm) -> Result<serde_json::Value,
     Ok(json)
 }
 
-/// Convert inline NPDM from TOML format to JSON format expected by parse_npdm_json
-/// Strip `0x` prefix from hex strings for parser compatibility
+/// Strip a `0x`/`0X` prefix from a hex string, if present.
 ///
-/// The parser uses `u64::from_str_radix(..., 16)` which does not accept `0x` prefixes.
-/// This helper normalizes hex strings from TOML to bare hex digits.
+/// Normalizes hex strings from TOML to bare hex digits for the NPDM descriptor.
 fn strip_hex_prefix(s: &str) -> &str {
     s.strip_prefix("0x")
         .or_else(|| s.strip_prefix("0X"))
