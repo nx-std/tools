@@ -19,7 +19,7 @@ chrono = "0.4"
 cipher = "0.5"
 clap = { version = "4", features = ["derive"] }
 nx-netloader = { version = "0.1.0", path = "../nx-netloader" }
-nx-object = { version = "0.1.0", path = "../nx-object", features = ["elf", "lz4", "blz"] }
+nx-object = { version = "0.1.0", path = "../nx-object", features = ["elf", "lz4"] }
 num-bigint = "0.4"
 schemars = { version = "1", optional = true }
 serde = "1"
