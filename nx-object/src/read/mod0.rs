@@ -18,6 +18,12 @@ pub struct Mod0<'a> {
 
 impl<'a> Mod0<'a> {
     /// Parse MOD0 from bytes with magic validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the buffer is shorter than the header or if the magic
+    /// does not match — the latter usually meaning the MOD0 offset taken from the
+    /// enclosing image pointed somewhere else.
     pub fn try_from_bytes(bytes: &'a [u8]) -> Result<Self, FromBytesError> {
         if bytes.len() < size_of::<Mod0Header>() {
             return Err(FromBytesError::BufferTooSmall {

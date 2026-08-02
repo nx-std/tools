@@ -87,6 +87,14 @@ pub struct Npdm<'a> {
 
 impl<'a> Npdm<'a> {
     /// Parse NPDM from bytes with magic and size validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the buffer is shorter than the META header, if any of
+    /// the three magics does not match, or if the ACID or ACI0 section the META
+    /// header points at extends past the end of the buffer. The blocks nested
+    /// inside ACI0 are not checked here; see [`Npdm::aci0_fac_data`] and its
+    /// siblings.
     pub fn try_from_bytes(bytes: &'a [u8]) -> Result<Self, FromBytesError> {
         // Validate minimum size for META header
         if bytes.len() < size_of::<NpdmHeader>() {

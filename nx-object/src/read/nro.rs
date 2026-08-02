@@ -24,6 +24,13 @@ pub struct Nro<'a> {
 
 impl<'a> Nro<'a> {
     /// Parse NRO from bytes with magic and size validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the buffer cannot hold the start stub and header, if
+    /// the magic does not match, or if any segment's offset and size overflow or
+    /// run past the end of the buffer. A missing asset section is not an error:
+    /// the asset accessors return `None` for a bare NRO.
     pub fn try_from_bytes(bytes: &'a [u8]) -> Result<Self, FromBytesError> {
         // Validate minimum size for start + header
         let min_size = size_of::<NroStart>() + size_of::<NroHeader>();

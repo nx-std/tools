@@ -20,6 +20,13 @@ pub struct Nso<'a> {
 
 impl<'a> Nso<'a> {
     /// Parse NSO from bytes with magic and size validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the buffer is shorter than the header, if the magic
+    /// does not match, or if a segment's stored extent runs past the end of the
+    /// buffer. The extents checked are the compressed ones actually occupying the
+    /// file, so success does not imply a segment decompresses to its declared size.
     pub fn try_from_bytes(bytes: &'a [u8]) -> Result<Self, FromBytesError> {
         if bytes.len() < size_of::<NsoHeader>() {
             return Err(FromBytesError::BufferTooSmall {

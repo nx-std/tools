@@ -20,6 +20,12 @@ pub struct Nacp<'a> {
 
 impl<'a> Nacp<'a> {
     /// Parse NACP from bytes with validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if the buffer is shorter than a NACP. There is no
+    /// magic to check, so any buffer of sufficient length parses and success says
+    /// nothing about whether the bytes are really a NACP.
     pub fn try_from_bytes(bytes: &'a [u8]) -> Result<Self, FromBytesError> {
         if bytes.len() < size_of::<NacpStruct>() {
             return Err(FromBytesError {
