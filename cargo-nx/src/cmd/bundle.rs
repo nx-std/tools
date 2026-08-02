@@ -194,6 +194,10 @@ pub struct Args {
 /// Errors from the `bundle` subcommand.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// A path argument could not be resolved to an absolute path.
+    ///
+    /// `flag` names the option it came from. The leaf may be missing, so this
+    /// means the parent directory does not exist or is not reachable.
     #[error("Failed to resolve {flag} path '{}'", path.display())]
     ResolvePath {
         flag: &'static str,
@@ -201,42 +205,60 @@ pub enum Error {
         source: io::Error,
     },
 
+    /// The `--tmp-dir` directory did not exist and could not be created.
     #[error("Failed to create tmp dir '{}'", path.display())]
     CreateTmpDir { path: PathBuf, source: io::Error },
 
+    /// The input ELF could not be read from disk.
     #[error("Failed to read ELF file '{}'", path.display())]
     ReadElf { path: PathBuf, source: io::Error },
 
+    /// The `--icon` file could not be read from disk.
     #[error("Failed to read icon file '{}'", path.display())]
     ReadIcon { path: PathBuf, source: io::Error },
 
+    /// A NACP field required to build the control data was not supplied.
+    ///
+    /// Carries the name of the missing option. NACP generation is only skipped
+    /// when `--no-nacp` is passed, so an omitted field is an error rather than
+    /// a default.
     #[error("Missing required NACP field: {0} (pass it or use --no-nacp)")]
     MissingNacpField(&'static str),
 
+    /// The `--romfs` directory could not be collected into an image.
+    ///
+    /// Raised while walking the directory, before any entry is laid out.
     #[error("Failed to build RomFS from directory '{}'", path.display())]
     BuildRomfsFromDir {
         path: PathBuf,
         source: romfs::FromDirectoryError,
     },
 
+    /// The collected RomFS entries could not be serialized into an image.
     #[error("Failed to build RomFS image")]
     BuildRomfs(#[source] romfs::BuildError),
 
+    /// The NACP control data could not be assembled from the supplied fields.
     #[error("Failed to assemble the NACP control data")]
     BuildNacp(#[source] pack::nacp::Error),
 
+    /// The NRO could not be assembled from the input ELF and its assets.
     #[error("Failed to assemble the NRO artifact")]
     BuildNro(#[source] pack::nro::Error),
 
+    /// The NSO image could not be assembled from the input ELF.
     #[error("Failed to assemble the NSO image")]
     BuildNso(#[source] pack::nso::Error),
 
+    /// The process metadata could not be built from the `--npdm-json` descriptor.
     #[error("Failed to assemble the process metadata")]
     BuildNpdm(#[source] pack::npdm::Error),
 
+    /// The NSO and NPDM could not be packaged into an NSP.
     #[error("Failed to assemble the NSP package")]
     BuildNsp(#[source] pack::nsp::Error),
 
+    /// The finished artifact could not be written to the output path.
     #[error("Failed to write output file '{}'", path.display())]
     WriteOutput { path: PathBuf, source: io::Error },
 }
