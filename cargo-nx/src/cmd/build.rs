@@ -401,7 +401,7 @@ struct NroMetadata {
 
 fn handle_nro_format(root: &Path, artifact: &Artifact, metadata: NroMetadata) -> Result<(), Error> {
     let elf = artifact.filenames[0].clone();
-    let nro = get_output_elf_path_as(
+    let nro = artifact_path_with_extension(
         artifact,
         if metadata.overlay == Some(true) {
             "ovl"
@@ -473,7 +473,7 @@ fn handle_nro_format(root: &Path, artifact: &Artifact, metadata: NroMetadata) ->
 
 fn handle_nsp_format(root: &Path, artifact: &Artifact, metadata: NspMetadata) -> Result<(), Error> {
     let elf = artifact.filenames[0].clone();
-    let exefs_nsp = get_output_elf_path_as(artifact, "nsp");
+    let exefs_nsp = artifact_path_with_extension(artifact, "nsp");
 
     // Build NPDM bytes (from inline TOML or external JSON file)
     let npdm_bytes = if let Some(inline_npdm) = metadata.npdm {
@@ -592,7 +592,9 @@ fn build_nacp_from_metadata(metadata: &NacpMetadata) -> Result<Vec<u8>, String> 
         .map_err(|err| format!("Failed to build NACP: {}", err))
 }
 
-fn get_output_elf_path_as(artifact: &Artifact, extension: &str) -> PathBuf {
+/// The path `artifact`'s compiled ELF occupies, with its extension replaced by
+/// `extension` — where the packed output for that container format is written.
+fn artifact_path_with_extension(artifact: &Artifact, extension: &str) -> PathBuf {
     let mut elf = artifact.filenames[0].clone();
     // A compiler artifact filename always has a file name, so this succeeds.
     elf.set_extension(extension);

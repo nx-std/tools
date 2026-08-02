@@ -57,6 +57,8 @@ pub fn error(err: &dyn Error) {
 pub fn warning(message: &str) {
     let styled = io::stderr().is_terminal();
     let mut stderr = io::stderr().lock();
+    // A closed or failing stderr leaves nowhere to report the failure, and a warning is
+    // never the reason a command fails.
     let _ = write_prefixed(&mut stderr, styled, WARNING_STYLE, "warning:", message);
 }
 
@@ -66,12 +68,16 @@ pub fn warning(message: &str) {
 pub fn status(verb: &str, message: &str) {
     let styled = io::stdout().is_terminal();
     let mut stdout = io::stdout().lock();
+    // A closed stdout (a killed pager, a broken pipe) must not turn a successful build
+    // into a failure; the artifact is already written by the time the status is printed.
     let _ = write_status(&mut stdout, styled, verb, message);
 }
 
 /// Forward already-rendered text (e.g. `cargo` / `rustc` diagnostics) verbatim to stdout.
 pub fn raw(text: &str) {
     let mut stdout = io::stdout().lock();
+    // Same as `status`: a broken pipe on stdout costs the user a forwarded diagnostic,
+    // not the build that produced it.
     let _ = stdout.write_all(text.as_bytes());
 }
 

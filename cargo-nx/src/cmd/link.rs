@@ -138,6 +138,9 @@ pub async fn handle_subcommand(
 
         let stdio_server_addr = (Ipv4Addr::UNSPECIFIED, nx_netloader::CLIENT_PORT);
         tokio::select! {biased;
+            // The NRO has already been transferred and launched. A stdio session that
+            // fails to bind or drops mid-stream costs the user console output, not the
+            // deploy, so the transfer's success is what this command reports.
             _ = nx_netloader::stdio::start_server(stdio_server_addr) => {}
             _ = tokio::signal::ctrl_c() => {}
         }
