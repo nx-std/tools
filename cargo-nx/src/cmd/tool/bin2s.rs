@@ -13,6 +13,12 @@ use super::identifier::sanitize_identifier;
 /// Reads each input file, emits one assembly block per non-empty file to the
 /// configured output (stdout or `--output` file), and optionally writes a
 /// matching C header when `--header` is provided.
+///
+/// # Errors
+///
+/// Returns an error if an input file cannot be read, if its name yields no valid
+/// identifier, or if the output or header cannot be written. An empty input is
+/// skipped with a warning rather than failing the run.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     let entries = read_entries(&args.inputs, args.apple_llvm)?;
     write_asm(&args, &entries)?;

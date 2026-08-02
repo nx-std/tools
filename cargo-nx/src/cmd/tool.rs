@@ -15,6 +15,11 @@ pub mod npdmtool;
 use crate::{ToolArgs, ToolSubcommand, ui::CliError};
 
 /// Dispatch a `cargo nx tool <name>` invocation to its handler.
+///
+/// # Errors
+///
+/// Wraps whatever the dispatched tool returned in the matching variant, so the
+/// failure names the tool that produced it.
 pub fn handle_subcommand(args: ToolArgs) -> Result<(), Error> {
     match args.subcommand {
         ToolSubcommand::Elf2nro(args) => elf2nro::handle_subcommand(args).map_err(Error::Elf2nro),

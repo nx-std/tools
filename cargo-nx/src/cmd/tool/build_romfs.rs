@@ -1,3 +1,5 @@
+//! `build_romfs` subcommand — pack a directory into a RomFS image.
+
 use std::{
     fs::OpenOptions,
     io::{self, Write},
@@ -6,6 +8,13 @@ use std::{
 
 use nx_object::write::{RomFsBuilder, romfs};
 
+/// Handle the `build_romfs` invocation.
+///
+/// # Errors
+///
+/// Returns an error if the input directory cannot be collected into entries, if
+/// the image cannot be serialized, or if the output file cannot be created or
+/// written.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     // Build RomFS from directory
     let romfs_bytes = RomFsBuilder::from_directory(&args.in_directory)

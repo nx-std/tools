@@ -6,6 +6,10 @@ use nx_object::write::{NacpBuilder, nacp};
 ///
 /// Used by `cargo nx bundle` (and the legacy `bundle.sh` script): all 16 NACP
 /// languages receive the same name/author. No title id is set.
+///
+/// # Errors
+///
+/// Returns an error if a field exceeds the fixed width NACP reserves for it.
 pub fn build_simple(name: String, author: String, version: String) -> Result<Vec<u8>, Error> {
     NacpBuilder::new()
         .name(name)

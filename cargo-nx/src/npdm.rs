@@ -289,6 +289,13 @@ impl NpdmDescriptor {
     ///
     /// Validates and converts the descriptor into the `nx-object` builder inputs,
     /// then serializes the META/ACI0/ACID sections into the final image bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a descriptor field is outside the range the format
+    /// allows, or if two fields contradict each other. Both are rejected here
+    /// rather than at deserialization, so the failure names the descriptor's own
+    /// field rather than a JSON path.
     pub fn build(self) -> Result<Vec<u8>, Error> {
         let (metadata, aci, acid) = <(NpdmMetadata, AciData, AcidData)>::try_from(self)?;
         Ok(NpdmBuilder::new(metadata)

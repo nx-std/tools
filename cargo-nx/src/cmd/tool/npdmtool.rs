@@ -1,7 +1,15 @@
+//! `npdmtool` subcommand — compile a JSON process descriptor into an NPDM.
+
 use std::{io, path::PathBuf};
 
 use cargo_nx::npdm::{self, NpdmDescriptor};
 
+/// Handle the `npdmtool` invocation.
+///
+/// # Errors
+///
+/// Returns an error if the descriptor cannot be read or is not valid JSON, if it
+/// is not a well-formed descriptor, or if the output cannot be written.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     let json_content = std::fs::read_to_string(&args.json_file).map_err(|err| Error::ReadJson {
         path: args.json_file.clone(),

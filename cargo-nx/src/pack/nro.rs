@@ -14,6 +14,11 @@ pub struct NroAssets {
 }
 
 /// Build an NRO image from ELF bytes and optional assets.
+///
+/// # Errors
+///
+/// Returns an error if the ELF cannot be parsed into segments, or if the segments
+/// it yields cannot be assembled into an NRO. Absent assets are not an error.
 pub fn build_nro(elf_bytes: &[u8], assets: NroAssets) -> Result<Vec<u8>, Error> {
     let segments = ElfSegments::parse(elf_bytes).map_err(Error::ParseElf)?;
     let mut builder = segments.into_nro_builder();

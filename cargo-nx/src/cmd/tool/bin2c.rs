@@ -13,6 +13,12 @@ use super::identifier::sanitize_identifier;
 /// Reads each input file, emits one C array block per non-empty file to the
 /// configured output (stdout or `--output` file), and optionally writes a
 /// matching header with extern declarations when `--header` is provided.
+///
+/// # Errors
+///
+/// Returns an error if an input file cannot be read, if its name yields no valid
+/// C identifier, or if the output or header cannot be written. An empty input is
+/// skipped with a warning rather than failing the run.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     let entries = read_entries(&args.inputs)?;
     write_source(&args, &entries)?;

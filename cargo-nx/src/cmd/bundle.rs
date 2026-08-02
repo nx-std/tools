@@ -15,6 +15,16 @@ use nx_object::write::{RomFsBuilder, romfs};
 
 use crate::pack;
 
+/// Handle the `bundle` subcommand: pack a pre-built ELF into an NRO or an NSP.
+///
+/// Passing `--npdm-json` selects NSP; its absence selects NRO.
+///
+/// # Errors
+///
+/// Returns an error if a path argument cannot be resolved, if the ELF, icon, or
+/// RomFS directory cannot be read, if a NACP field required by the selected mode
+/// is missing, if any packing step rejects its input, or if the output cannot be
+/// written.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     // Resolve all paths to absolute paths at the boundary (parity with bundle.sh).
     let input = absolutize(&args.input).map_err(|err| Error::ResolvePath {

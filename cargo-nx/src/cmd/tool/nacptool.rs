@@ -1,7 +1,15 @@
+//! `nacptool` subcommand — assemble NACP control data from command-line fields.
+
 use std::{io, num::ParseIntError, path::PathBuf};
 
 use nx_object::write::{NacpBuilder, nacp};
 
+/// Handle the `nacptool` invocation.
+///
+/// # Errors
+///
+/// Returns an error if `--titleid` is not 16 hexadecimal digits, if a field
+/// exceeds the width NACP reserves for it, or if the output cannot be written.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     // Build NACP using nx-object builder
     let mut builder = NacpBuilder::new()

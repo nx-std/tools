@@ -1,3 +1,9 @@
+//! `elf2kip` subcommand — convert a linked ELF into a KIP1.
+//!
+//! Unlike the NRO and NSO conversions, this one needs a JSON process descriptor
+//! as well as the ELF: a KIP1 header carries the process metadata and kernel
+//! capabilities, which cannot be derived from the executable.
+
 use std::{
     fs,
     io::{self, BufWriter},
@@ -10,6 +16,13 @@ use nx_object::{
     write::{kip, npdm::KernelCapability},
 };
 
+/// Handle the `elf2kip` invocation.
+///
+/// # Errors
+///
+/// Returns an error if the ELF or the JSON descriptor cannot be read or parsed,
+/// if the descriptor's kernel capabilities cannot be lowered, if the KIP1 cannot
+/// be assembled, or if the output file cannot be created or written.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     // Load and parse ELF file
     let elf_data = fs::read(&args.elf_file).map_err(|err| Error::ReadElf {

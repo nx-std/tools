@@ -6,6 +6,11 @@ use nx_object::{
 };
 
 /// Build an NSO image from ELF bytes.
+///
+/// # Errors
+///
+/// Returns an error if the ELF cannot be parsed into segments, or if the segments
+/// it yields cannot be assembled into an NSO.
 pub fn build_nso(elf_bytes: &[u8]) -> Result<Vec<u8>, Error> {
     let segments = ElfSegments::parse(elf_bytes).map_err(Error::ParseElf)?;
     segments.into_nso_builder().build().map_err(Error::Build)
