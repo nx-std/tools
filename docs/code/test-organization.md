@@ -1,46 +1,27 @@
 ---
 name: "test-organization"
-description: "Unit, integration, and e2e test tiers with the it_* naming convention. Load when deciding test type or placement."
+description: "Unit, integration and e2e tiers with the it_* convention and how each suite is run. Load when deciding test type or placement"
 type: core
 scope: "global"
 ---
 
 # Test Organization
 
-## PURPOSE
+**MANDATORY for choosing the tier and variant of any new test**
 
-This document defines the three-tier testing strategy: **unit**, **integration**, and **e2e** tests. The unit and integration tiers each have two variants — **in-tree** (inside `src/`) and **public API** (in `<crate>/tests/`) — distinguished by the `it_*` naming convention.
+## Three Tiers
 
-For how to **run** tests (justfile tasks, nextest profiles, per-crate commands), see the `/code-test` skill.
+| Tier | Dependencies | Speed | Purpose | Selected by |
+|------|-------------|-------|---------|-------------|
+| **Unit** | None | Milliseconds | Pure logic and byte-level transforms | No `it_` in the path |
+| **Integration** | Filesystem, process, network | Seconds | Components with real dependencies | `it_` module or file |
+| **E2E** | Filesystem, process, network | Seconds | Cross-crate end-to-end workflows | `it_` file in `tests/` |
 
-For test function authoring (naming, Given-When-Then structure, assertions), see [test-functions.md](test-functions.md).
+Each tier has a role the others cannot fill: unit tests cannot verify that a packed image survives a round trip through the filesystem, integration tests cannot verify cross-crate workflows, and e2e tests are too slow and broad for isolated logic. Start with unit tests for pure logic, use integration tests for components with external dependencies, and use e2e tests for cross-crate end-to-end workflows.
 
-For test file organization (where tests go in the directory structure), see [test-files.md](test-files.md).
+For how to **run** tests (justfile tasks, per-crate commands), see the `/code-test` skill.
 
----
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Unit Tests](#unit-tests)
-3. [Integration Tests](#integration-tests)
-4. [E2E Tests](#e2e-tests)
-
----
-
-## Overview
-
-The three-tier testing strategy provides comprehensive coverage across different levels of abstraction, ensuring reliability and correctness from individual functions to complete workflows.
-
-### Three Tiers
-
-| Tier | Dependencies | Speed | Purpose | Nextest Profile |
-|------|-------------|-------|---------|-----------------|
-| **Unit** | None | Milliseconds | Pure business logic | `unit` |
-| **Integration** | External (DB, Network) | Seconds | Components with real dependencies | `integration` |
-| **E2E** | External (DB, Network) | Seconds | Cross-crate end-to-end workflows | `e2e` |
-
-### In-tree vs Public API Variants
+## In-tree vs Public API Variants
 
 The unit and integration tiers each split into two variants based on **where** the test lives and **what** it can access:
 
@@ -49,277 +30,160 @@ The unit and integration tiers each split into two variants based on **where** t
 | **In-tree** | `src/` (`#[cfg(test)]` modules) | Internal + public APIs | Unit: `tests::` (no `it_*`), Integration: `tests::it_*` |
 | **Public API** | `<crate>/tests/` directory | Public API only | Unit: no `it_*` prefix, Integration: `it_*` prefix |
 
-The `it_*` prefix is the **sole mechanism** that distinguishes integration tests from unit tests in both locations. Tests without `it_*` are unit tests; tests with `it_*` are integration tests.
+The `it_*` prefix is the **sole mechanism** that distinguishes integration tests from unit tests in both locations. Tests without `it_*` are unit tests; tests with `it_*` are integration tests. That is what lets a run select one tier: `-E 'test(/::it_/)'` for the integration tier, `--skip 'tests::it_'` for everything else.
 
-**Key principle**: Start with unit tests for pure logic, use integration tests for components with external dependencies, and use e2e tests for cross-crate end-to-end workflows.
-
----
+In-tree tests reach internal APIs, which is what makes it possible to test non-public query functions, internal helpers, and error paths in internal components. Public API tests verify the external contract: that the exported interface is ergonomic and correct, that advertised workflows work, and that errors propagate through it. Location determines API access; the `it_*` prefix determines whether external dependencies are involved.
 
 ## Unit Tests
 
-Unit tests must have **no external dependencies** and execute in **milliseconds**. These tests validate pure business logic, data transformations, and error handling without requiring database connections or external services.
+Unit tests must have **no external dependencies** and execute in **milliseconds**. They validate pure logic, byte-level transformations, and error handling without touching the filesystem, spawning a process, or opening a socket.
 
-### Purpose
-
-Unit tests verify the correctness of individual functions and modules in isolation. They are the foundation of test coverage and should be fast, reliable, and comprehensive.
-
-### Characteristics
-
-- **NO EXTERNAL DEPENDENCIES**: No PostgreSQL database instance, no network calls, no filesystem operations (except temp dirs)
-- **Performance**: Must complete execution in milliseconds
+- **No external dependencies**: no spawned processes, no network calls, no filesystem operations
+- **Performance**: must complete in milliseconds
 - **Reliability**: 100% deterministic, no flakiness
-- **No `it_*` prefix**: Test functions and modules must NOT use the `it_*` naming convention
+- **No `it_*` prefix**: test functions and modules must NOT use the `it_*` naming convention
 
-### Variants
+Variants:
 
-#### In-tree Unit Tests
+- **In-tree**: `src/` files inside `#[cfg(test)] mod tests { ... }`; internal and public APIs; selected by `kind(lib)` excluding `test(/::it_/)`
+- **Public API**: `<crate>/tests/` files without an `it_*` prefix; public API only (separate crate); selected by `kind(test)` excluding `test(/::it_/)`
 
-- **Location**: `src/` files, inside `#[cfg(test)] mod tests { ... }`
-- **API access**: Internal and public APIs
-- **Nextest filter**: `kind(lib)` excluding `test(/::it_/)`
-
-#### Public API Unit Tests
-
-- **Location**: `<crate>/tests/` directory, files without `it_*` prefix
-- **API access**: Public API only (compiled as separate crate)
-- **Nextest filter**: `kind(test)` excluding `test(/::it_/)`
-
-### What to Test with Unit Tests
-
-- **Data validation logic** — ID validation, input sanitization, format checking
-- **Business rule enforcement** — Status transitions, constraint checking, invariant validation
-- **Data transformation functions** — Parsing, formatting, conversion between types
-- **Error condition handling** — Boundary cases, invalid inputs, edge conditions
-- **Pure computational functions** — Calculations, algorithms, data structure operations
-
-### Examples
-
-**In-tree unit test:**
+What to cover: input validation logic (entry path validation, argument checking, magic and size checks), format rule enforcement (segment bounds, alignment, header invariants), data transformation (parsing, encoding, type conversion), error condition handling (truncated buffers, invalid inputs, edge conditions), and pure computational functions (layout planning, compression, checksums).
 
 ```rust
+// ✅ Good — in-tree unit test: pure logic, no it_ prefix, so it stays in the unit tier
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn validate_worker_id_with_valid_input_succeeds() {
+    fn validate_entry_path_with_valid_input_succeeds() {
         //* Given
-        let valid_id = "worker-123";
+        let valid_path = "romfs/config.json";
 
         //* When
-        let result = validate_worker_id(valid_id);
+        let result = validate_entry_path(valid_path);
 
         //* Then
         assert!(result.is_ok(), "validation should succeed with valid input");
-        assert_eq!(result.expect("should return valid value"), valid_id);
+        assert_eq!(result.expect("should return valid value"), valid_path);
     }
 }
-```
 
-**Public API unit test:**
-
-```rust
-// tests/api_validation.rs  (no it_* prefix — this is a unit test)
-use metadata_db::WorkerNodeId;
+// ✅ Good — public API unit test in tests/api_validation.rs: no it_ prefix, exported items only
+use nx_object::TitleId;
 
 #[test]
-fn parse_worker_id_from_string_succeeds() {
+fn parse_title_id_from_string_succeeds() {
     //* Given
-    let input = "worker-123";
+    let input = "0100000000001000";
 
     //* When
-    let result = WorkerNodeId::new(input.to_string());
+    let result = input.parse::<TitleId>();
 
     //* Then
-    let node_id = result.expect("should parse valid worker ID");
-    assert_eq!(node_id.as_str(), input);
+    let title_id = result.expect("should parse valid title ID");
+    assert_eq!(title_id.to_string(), input);
 }
 ```
-
-See [test-functions.md](test-functions.md#-complete-example) for full examples with Given-When-Then structure.
-
-**For file placement and module structure details**, see [test-files.md](test-files.md).
-
----
 
 ## Integration Tests
 
-Integration tests verify that components work correctly with **external dependencies** like databases, network services, or the filesystem. They are distinguished from unit tests by the mandatory `it_*` naming convention.
+Integration tests verify that components work correctly with **external dependencies** such as the filesystem, a spawned `cargo` invocation, or a console reachable over the network.
 
-### Purpose
+- **External dependencies**: real files and processes (for example a `tempfile::tempdir` fixture tree, or a spawned build)
+- **Mandatory `it_*` prefix on the parent module**: integration tests must live inside an `it_*`-prefixed module or file for filtering
+- **Flakiness risk**: may fail due to external dependency issues (a busy port, a slow disk, a missing toolchain)
+- **Performance**: seconds, not milliseconds
 
-Integration tests verify that code works correctly when interacting with real external systems. They test the integration between modules and external dependencies.
+Variants:
 
-### Characteristics
+- **In-tree**: `src/` files inside `tests::it_*` submodules, either as separate files `src/<module>/tests/it_*.rs` or inline `mod it_*` submodules; internal and public APIs; selected by `kind(lib)` with `test(/::it_/)`
+- **Public API**: `<crate>/tests/` files with an `it_*` prefix; public API only (separate crate); selected by `kind(test)` with `test(/::it_/)`
 
-- **External dependencies**: Use actual database connections or external services (e.g., `pgtemp` for PostgreSQL, Anvil for blockchain)
-- **Mandatory `it_*` prefix on parent module**: Integration tests must live inside an `it_*`-prefixed module (or file) for filtering
-- **Flakiness risk**: May fail due to external dependency issues (network, database constraints, etc.)
-- **Performance**: Slower execution due to external dependencies (seconds, not milliseconds)
-
-### Variants
-
-#### In-tree Integration Tests
-
-- **Location**: `src/` files, inside `tests::it_*` submodules
-- **API access**: Internal and public APIs
-- **File structure**: Either separate files in `src/<module>/tests/it_*.rs` or inline submodules named `mod it_*`
-- **Nextest filter**: `kind(lib)` with `test(/::it_/)`
-
-#### Public API Integration Tests
-
-- **Location**: `<crate>/tests/` directory, files with `it_*` prefix
-- **API access**: Public API only (compiled as separate crate)
-- **Nextest filter**: `kind(test)` with `test(/::it_/)`
-
-### What to Test with Integration Tests
-
-- **Database operations** — CRUD operations, complex queries, transaction behavior
-- **Transaction behavior** — Rollback on failure, atomicity, isolation guarantees
-- **Error handling with external systems** — Network failures, database constraints, timeout handling
-- **Resource management** — Connection pooling, cleanup, lifecycle management
-- **Migration and schema changes** — Forward and backward compatibility
-
-### Examples
-
-**In-tree integration test:**
+What to cover: filesystem operations (writing an image, reading it back, permissions), partial-failure behavior (an aborted write leaves no half-packed artifact), error handling with external systems (a refused connection, a missing file, a timeout), resource management (temp directory cleanup, socket lifecycle), and format compatibility (an artifact written by the builder parses back through the reader).
 
 ```rust
+// ✅ Good — in-tree integration test: disk-backed work sits under an it_ module
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    mod it_heartbeat {
+    mod it_image {
         use super::*;
-        use crate::temp::temp_metadata_db;
 
-        #[tokio::test]
-        async fn update_heartbeat_timestamp_with_existing_worker_succeeds() {
+        #[test]
+        fn write_image_with_populated_dir_succeeds() {
             //* Given
-            let db = temp_metadata_db().await;
-            let worker_id = WorkerId::new(1);
-            let new_timestamp = chrono::Utc::now();
+            let dir = tempfile::tempdir().expect("temp dir should be created");
+            let out = dir.path().join("image.romfs");
 
             //* When
-            let result = update_heartbeat_timestamp(&db.pool, &worker_id, new_timestamp).await;
+            let result = write_image(dir.path(), &out);
 
             //* Then
-            assert!(result.is_ok(), "heartbeat update should succeed");
-            let updated_worker = get_by_id(&db.pool, &worker_id).await
-                .expect("should retrieve updated worker")
-                .expect("worker should exist");
-            assert!(updated_worker.last_heartbeat.is_some(), "heartbeat timestamp should be set");
+            assert!(result.is_ok(), "image write should succeed");
+            let written = std::fs::metadata(&out)
+                .expect("should stat the written image")
+                .len();
+            assert!(written > 0, "the image should not be empty");
         }
     }
 }
 ```
 
-**Public API integration test:**
-
 ```rust
-// tests/it_api_workers.rs  (it_* prefix — this is an integration test)
-use metadata_db::{MetadataDb, WorkerNodeId, JobStatus};
-use metadata_db::temp::temp_metadata_db;
+// ✅ Good — public API integration test in tests/it_bundle.rs: it_ prefix, exported items only
+use nx_object::{read::Nro, write::NroBuilder};
 
-#[tokio::test]
-async fn register_worker_and_schedule_job_workflow_succeeds() {
+#[test]
+fn build_and_parse_nro_round_trips() {
     //* Given
-    let db = temp_metadata_db().await;
-    let node_id = WorkerNodeId::new("test-worker".to_string())
-        .expect("should create valid worker node ID");
-    let register_result = db.register_worker(&node_id).await;
-    assert!(register_result.is_ok(), "worker registration should succeed");
+    let dir = tempfile::tempdir().expect("temp dir should be created");
+    let elf = fixture_elf(dir.path());
 
     //* When
-    let job_result = db.schedule_job(&node_id, "test job", JobStatus::Scheduled).await;
+    let result = NroBuilder::new().elf(&elf).build();
 
     //* Then
-    assert!(job_result.is_ok(), "job scheduling should succeed");
-    let job_id = job_result.expect("should return valid job ID");
-    let retrieved_job = db.get_job(job_id).await
-        .expect("should retrieve scheduled job")
-        .expect("job should exist");
-    assert_eq!(retrieved_job.status, JobStatus::Scheduled);
+    assert!(result.is_ok(), "the NRO build should succeed");
+    let bytes = result.expect("should return the packed NRO");
+    let nro = Nro::try_from_bytes(&bytes).expect("the packed NRO should parse back");
+    assert_eq!(nro.segments().len(), 3);
 }
 ```
 
-See [test-files.md](test-files.md) for full placement examples.
-
----
-
 ## E2E Tests
 
-E2E tests live in the top-level `tests/` **workspace package** (not individual crate `tests/` directories). They test cross-crate, end-to-end workflows that span multiple components.
+E2E tests cover a whole tool invocation: building a fixture project through `cargo-nx` and checking the artifact it produced, or deploying an NRO to a listener standing in for a console. They span several crates, need a real environment (a toolchain, a temp project tree, a socket), and live in the driving crate's `tests/` directory under the `it_` prefix like any other integration file.
 
-### Purpose
+What to cover: cross-crate workflows (an ELF becoming an NRO becoming a deployed file), tool integration (the subcommand, the packer, and the loader working together), and complete user scenarios (`cargo nx build` through to a written artifact).
 
-E2E tests verify that the system works correctly as a whole, testing complete workflows that cross crate boundaries.
+## Running the Suites
 
-### Characteristics
+There is one runner and two scopes:
 
-- **Top-level package**: Located in the workspace-level `tests/` package
-- **Cross-crate scope**: Test interactions between multiple crates
-- **External dependencies**: Typically require full environment (database, network, etc.)
-- **Nextest filter**: `package(tests)`
+- `just test` runs the whole workspace.
+- `just test-crate <crate>` runs one package.
 
-### What to Test with E2E Tests
+Both prefer `cargo nextest run` and fall back to `cargo test` when nextest is not installed. Neither excludes the `it_` tier: the prefix exists so a developer can select or skip it explicitly — `cargo nextest run -E 'test(/::it_/)'` for the integration tier, `cargo test -- --skip 'tests::it_'` for everything else.
 
-- **Cross-crate workflows** — Data flowing through multiple crates end-to-end
-- **System integration** — Multiple services working together
-- **Complete user scenarios** — Full request lifecycle from entry to completion
+A test that needs something the machine may not have — a console on the network, a toolchain component — states that in its name and skips cleanly when the dependency is absent, rather than failing a suite that never promised it.
 
----
-
-## CHECKLIST
+## Checklist
 
 When deciding which test tier and variant to use:
 
 - [ ] Does the function have zero external dependencies? → **Unit test**
-- [ ] Does the function need database/network/external services? → **Integration test** (use `it_*` prefix)
-- [ ] Does the test span multiple crates end-to-end? → **E2E test** (top-level `tests/` package)
+- [ ] Does the function need the filesystem, a process, or the network? → **Integration test** (use `it_*` prefix)
+- [ ] Does the test span multiple crates end-to-end? → **E2E test** (in the driving crate's `tests/`)
 - [ ] Does the test need access to internal APIs? → **In-tree** variant (in `src/`)
 - [ ] Should the test only use the public API? → **Public API** variant (in `<crate>/tests/`)
 - [ ] Is the test fast (milliseconds)? → Unit test
 - [ ] Is the test slow (seconds) due to external dependencies? → Integration test with `it_*` prefix
+- [ ] Does the test need a dependency the machine may not have? → It says so in its name and skips cleanly when absent
 
----
+## References
 
-## RATIONALE
-
-### Why Three Tiers?
-
-The three-tier strategy balances comprehensive coverage with maintainability and performance:
-
-1. **Unit tests** catch logic bugs quickly without external setup (milliseconds)
-2. **Integration tests** verify components work with real dependencies (seconds)
-3. **E2E tests** ensure the system works correctly across crate boundaries (seconds)
-
-Each tier has a specific role and cannot replace the others. Unit tests cannot verify database behavior. Integration tests cannot verify cross-crate workflows. E2E tests are too slow and broad for isolated logic. All three tiers are necessary for complete confidence.
-
-### Why `it_*` Prefix?
-
-The `it_*` prefix is the sole mechanism that distinguishes integration tests from unit tests:
-
-- Tests **without** `it_*` → unit tests (no external deps, fast)
-- Tests **with** `it_*` → integration tests (external deps, slower)
-
-This applies in both locations (`src/` and `<crate>/tests/`), enabling nextest profiles to filter precisely:
-
-- `unit` profile: excludes `test(/::it_/)` → runs only unit tests
-- `integration` profile: includes `test(/::it_/)` → runs only integration tests
-
-### Why In-tree vs Public API?
-
-**In-tree tests** (in `src/`) can access internal APIs not part of the public interface. This is essential for:
-
-- Testing database query functions that don't need to be public
-- Testing internal helper functions that support the public API
-- Testing error paths in internal components
-
-**Public API tests** (in `<crate>/tests/`) verify the external contract. They ensure that:
-
-- The crate's public API is ergonomic and correct
-- Workflows work as advertised through the public interface
-- Error handling propagates correctly through the public API
-
-Both variants exist within unit and integration tiers. The location determines API access; the `it_*` prefix determines whether external dependencies are involved.
+- [test-files](test-files.md) - Related: Where test modules and files live in the directory structure
+- [test-functions](test-functions.md) - Related: Naming, Given-When-Then structure, and assertions inside a test function

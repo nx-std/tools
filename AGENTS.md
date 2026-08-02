@@ -13,18 +13,18 @@ These are **host tools**: they compile and run on the development machine. No cr
 
 **If you're an AI agent working on this codebase, here's what you need to know immediately:**
 
-1. **Invoke `/code-guidelines` FIRST** → Before planning OR coding (applies in Plan mode too), load the relevant guidelines for the affected crate(s). Skipping this leads to plans that violate project conventions and cause rework.
-2. **Use Skills for operations** → Invoke skills (`/code-format`, `/code-check`, `/code-test`, `/code-review`) instead of running commands directly.
+1. **Invoke `/code-rules` FIRST** → Before planning OR coding (applies in Plan mode too), load the `docs/code/` rules that govern the affected crate(s). Skipping this leads to plans that violate project conventions and cause rework.
+2. **Use Skills for operations** → Invoke skills (`/code-format`, `/code-check`, `/code-test`, `/code-rules-check`, `/docs-fmt-check`, `/code-review`) instead of running commands directly.
 3. **Skills wrap justfile tasks** → Skills provide the interface to `just` commands with proper guidance.
-4. **Follow the workflow** → Format → Check → Clippy → Test.
+4. **Follow the workflow** → Format → Check → Clippy → Test → Rules check.
 5. **Fix ALL warnings** → Zero tolerance for clippy warnings.
 
-**Your first action**: Invoke `/code-guidelines` to load guidelines before drafting a plan or writing any code. For commands, invoke the relevant Skill.
+**Your first action**: Invoke `/code-rules` to load the rules before drafting a plan or writing any code. For commands, invoke the relevant Skill.
 
 ## Table of Contents
 
 1. [Principles](#1-principles) — Core design principles guiding this codebase
-2. [Code Guidelines](#2-code-guidelines) — Understanding coding standards via `/code-guidelines` skill
+2. [Code Rules](#2-code-rules) — Understanding coding standards via the `/code-rules` skill
 3. [Architecture](#3-architecture) — Crates and their relationships
 4. [Build System](#4-build-system) — Cargo workspace, prerequisites
 5. [Development Workflow](#5-development-workflow) — How to develop with this codebase
@@ -45,17 +45,23 @@ These are **host tools**: they compile and run on the development machine. No cr
 | **Inversion of Control**    | Depend on abstractions, not concretions                          | @docs/code/principle-inversion-of-control.md          |
 | **Least Surprise**          | Code behaves the way readers expect from its name and signature  | @docs/code/principle-least-surprise.md                |
 | **DRY/WET balance**         | Deduplicate real knowledge; tolerate incidental similarity       | @docs/code/principle-dry-wet.md                       |
+| **Information Hiding**      | Expose what callers need; keep representation and helpers private| @docs/code/principle-information-hiding.md            |
+| **Rate of Change**          | Group state and code by how often they change                    | @docs/code/principle-rate-of-change.md                |
+| **Symmetry**                | Express one idea one way; split near-duplicates cleanly          | @docs/code/principle-symmetry.md                      |
 
-Use `/code-guidelines principles` to load these on demand when relevant to your task.
+Every `principle-*` description in the `/code-rules` catalog states its rule in full, so loading the catalog
+gives you all of them. Read a full document when you need its examples or its Pragmatism Caveat to argue a
+decision, or invoke `/code-rules principles` to load and summarize them all.
 
 
-## 2. Code Guidelines
+## 2. Code Rules
 
-Code guideline documentation lives in `docs/code/` with YAML frontmatter for dynamic discovery.
+The code rules live in `docs/code/` with YAML frontmatter for dynamic discovery. "Code rules" and "code
+guidelines" name the same corpus.
 
-**Guideline docs are authoritative**: Guideline docs define how code should be written. All implementations MUST follow the patterns. If code doesn't follow a pattern, either fix the code or update the pattern.
+**Rule docs are authoritative**: They define how code should be written. All implementations MUST follow the patterns. If code doesn't follow a pattern, either fix the code or update the pattern.
 
-### Guideline Types
+### Rule Types
 
 | Type               | Scope          | Purpose                                                          |
 |--------------------|----------------|------------------------------------------------------------------|
@@ -63,22 +69,23 @@ Code guideline documentation lives in `docs/code/` with YAML frontmatter for dyn
 | **Core**           | `global`       | Fundamental coding standards (error handling, logging, modules)  |
 | **Architectural**  | `global`       | High-level patterns (workspace structure, crate layout)          |
 | **Pattern**        | `global`       | Reusable design patterns (builder, typestate)                    |
-| **Crate-specific** | `crate:<name>` | Patterns for specific crates (`cargo-nx`, `nx-netloader`)        |
+| **Crate-specific** | `crate:<name>` | Patterns for specific crates (`cargo-nx`, `nx-netloader`, `nx-object`) |
 | **Meta**           | `global`       | Documentation format specifications (`docs/__meta__/`)           |
 
 ### Skill Invocation
 
 | When You Need To                                                  | Invoke This Skill   |
 |-------------------------------------------------------------------|---------------------|
-| Understand code guidelines before implementing                    | `/code-guidelines`  |
-| "How should I handle errors?", "What's the pattern for X?"        | `/code-guidelines`  |
-| Load crate-specific guidelines for `cargo-nx` or `nx-netloader`   | `/code-guidelines`  |
-| Review code changes for guideline compliance                      | `/code-review`      |
+| Load the code rules before planning or implementing               | `/code-rules`       |
+| "How should I handle errors?", "What's the pattern for X?"        | `/code-rules`       |
+| Audit a finished changeset against the rules                      | `/code-rules-check` |
+| Validate a rule document's own format after editing `docs/code/`  | `/docs-fmt-check`   |
+| Deep review before a PR (bugs, security, soundness)               | `/code-review`      |
 
 **Navigation:**
 
-- Need to understand patterns? → `/code-guidelines`
-- All guidelines located in `docs/code/`
+- Need to understand patterns? → `/code-rules`
+- All rules located in `docs/code/`
 - Documentation format specs in `docs/__meta__/`
 
 ### Code Style
@@ -134,13 +141,14 @@ This project uses three complementary documentation systems. Understanding their
 |--------------------------------|--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
 | **AGENTS.md** (this file)      | **WHY** and **WHAT**     | Project architecture, policies, goals, and principles. Answers "What is this project?" and "Why do we do things this way?"                   |
 | **Skills** (`.agents/skills/`) | **HOW** and **WHEN**     | Command-line operations and just usage. Answers "How do I run commands?" and "When should I use each command?"                               |
-| **Guidelines** (`docs/code/`)  | **HOW** (implementation) | Code implementation guidelines and standards (see [Code Guidelines](#2-code-guidelines)). Answers "How do I write quality, conventional code?"|
+| **Rules** (`docs/code/`)       | **HOW** (implementation) | Code implementation rules and standards (see [Code Rules](#2-code-rules)). Answers "How do I write quality, conventional code?"|
 
 **Navigation Guide for AI Agents:**
 
 - Need to understand the project? → Read this file (AGENTS.md)
 - Need to run a command? → Invoke the appropriate Skill (`/code-format`, `/code-check`, `/code-test`)
-- Need to write code? → Use `/code-guidelines` to load relevant guidelines
+- Need to write code? → Use `/code-rules` to load the governing rules
+- Finished a change? → Use `/code-rules-check` to audit it against those rules
 
 ### Core Operating Principle
 
@@ -168,7 +176,8 @@ This project uses three complementary documentation systems. Understanding their
 - ✅ **Use skill**: `/code-format` (formatting Rust)
 - ✅ **Use skill**: `/code-check` (compile check, clippy)
 - ✅ **Use skill**: `/code-test` (run cargo tests)
-- ✅ **Use skill**: `/code-review` (review changes against guidelines)
+- ✅ **Use skill**: `/code-rules-check` (audit a changeset against the rules)
+- ✅ **Use skill**: `/code-review` (deep review before a PR)
 - ✅ **Direct tool OK**: `cargo tree -p cargo-nx` (introspection not in justfile)
 
 #### Command Execution Hierarchy (Priority Order)
@@ -201,7 +210,8 @@ When determining which command to run, follow this strict hierarchy:
 - Need to format a file? → Use `/code-format` skill
 - Need to check a crate? → Use `/code-check` skill
 - Need to run tests? → Use `/code-test` skill
-- Need to review changes? → Use `/code-review` skill
+- Need to check a changeset against the rules? → Use `/code-rules-check` skill
+- Need a deep review before a PR? → Use `/code-review` skill
 
 ### Command-Line Operations Reference
 
@@ -212,8 +222,10 @@ Available skills and their purposes:
 - **Formatting**: `/code-format` — Format Rust code after editing files
 - **Checking/Linting**: `/code-check` — Validate compilation and lint with clippy
 - **Testing**: `/code-test` — Run cargo tests
-- **Guidelines**: `/code-guidelines` — Load relevant code guidelines and patterns
-- **Reviewing**: `/code-review` — Review changes for bugs, guideline violations, security
+- **Rules**: `/code-rules` — Load the code rules and patterns that govern the work
+- **Rules check**: `/code-rules-check` — Audit a changeset against those rules
+- **Doc format**: `/docs-fmt-check` — Validate rule documents in `docs/code/` against their format spec
+- **Reviewing**: `/code-review` — Deep review for bugs, security, soundness
 
 Each Skill provides:
 
@@ -230,9 +242,9 @@ Each Skill provides:
 **BEFORE drafting a plan OR writing ANY code, you MUST:**
 
 1. **Understand the task** — Research the codebase and identify affected crate(s)
-2. **🚨 MANDATORY: Load implementation guidelines FIRST** — Invoke `/code-guidelines` before drafting any plan or writing any code. This applies equally in Plan mode: the plan itself MUST be grounded in the loaded guidelines, not in assumptions about conventions.
-3. **Follow crate-specific guidelines** — Guideline discovery loads crate-specific and core guidelines automatically
-4. **Rationale** — Skipping this step leads to plans that violate conventions, causing avoidable rework.
+2. **🚨 MANDATORY: Load the code rules FIRST** — Invoke `/code-rules` before drafting any plan or writing any code. This applies equally in Plan mode: the plan itself MUST be grounded in the loaded rules, not in assumptions about conventions.
+3. **Follow crate-specific rules** — Match the task against the catalog triggers and read the crate-specific and core rules it names
+4. **Rationale** — Skipping `/code-rules` leads to plans that use the wrong module layout, error pattern, or validation boundary, causing avoidable rework.
 
 ### Typical Development Workflow
 
@@ -240,18 +252,18 @@ Each Skill provides:
 
 #### 1. Research Phase
 
-- Understand the codebase and existing guidelines
+- Understand the codebase and the rules that govern it
 - Identify related modules and dependencies
-- Use `/code-guidelines` to load relevant implementation guidelines
+- Use `/code-rules` to load the relevant implementation rules
 
 #### 2. Planning Phase
 
-**🚨 MANDATORY FIRST STEP (including in Plan mode):** Invoke `/code-guidelines` to load the guidelines for the affected crate(s) BEFORE drafting the plan. The plan's structure, module layout, error handling, and type design decisions MUST reflect the loaded guidelines.
+**🚨 MANDATORY FIRST STEP (including in Plan mode):** Invoke `/code-rules` to load the rules for the affected crate(s) BEFORE drafting the plan. The plan's structure, module layout, error handling, and type design decisions MUST reflect the loaded rules.
 
-- Create the implementation plan on top of the loaded guidelines
+- Create the implementation plan on top of the loaded rules
 - Ensure plan follows required patterns (error handling, type design, module structure)
 - Identify validation checkpoints
-- Consider edge cases and error handling according to guidelines
+- Consider edge cases and error handling according to the rules
 - Ask user questions if requirements are unclear
 
 #### 3. Implementation Phase
@@ -262,19 +274,20 @@ Each Skill provides:
 
 ```
 Development Progress:
-- [ ] Step 1: Write code following guidelines (use /code-guidelines)
+- [ ] Step 1: Write code following the rules (use /code-rules)
 - [ ] Step 2: Format code (use /code-format skill)
 - [ ] Step 3: Check compilation (use /code-check skill)
 - [ ] Step 4: Fix all compilation errors
 - [ ] Step 5: Run clippy (use /code-check skill)
 - [ ] Step 6: Fix ALL clippy warnings
 - [ ] Step 7: Run tests when warranted (use /code-test skill)
-- [ ] Step 8: All required checks pass ✅
+- [ ] Step 8: Audit the changeset (use /code-rules-check skill)
+- [ ] Step 9: All required checks pass ✅
 ```
 
 **Detailed workflow for each work chunk (and before committing):**
 
-1. **Write code** following guidelines from [Code Guidelines](#2-code-guidelines) (loaded via `/code-guidelines`)
+1. **Write code** following the rules from [Code Rules](#2-code-rules) (loaded via `/code-rules`)
 
 2. **Format before checks/commit**:
    - **Use**: `/code-format` skill when you finish a coherent chunk of work
@@ -296,7 +309,13 @@ Development Progress:
    - **When to run**: Behavior changes, public API changes, or new logic in tested code paths
    - **Validation**: Fix failures or record why tests were skipped
 
-6. **Iterate**: If any validation fails → fix → return to step 2
+6. **Check the changeset against the rules**:
+   - **Use**: `/code-rules-check` once the implementation is complete
+   - **What it does**: selects the `docs/code/` rules the diff is governed by and reports violations with the document behind each one
+   - **Validation**: Fix every finding, or record why the deviation is deliberate
+   - **Doc edits**: If the change touches `docs/code/`, also run `/docs-fmt-check`
+
+7. **Iterate**: If any validation fails → fix → return to step 2
 
 **Visual Workflow:**
 
@@ -312,15 +331,19 @@ Edit File → /code-format skill
     /code-test skill (when warranted)
           ↓              ↓ Fix failure?
     All Pass ✅     (loop back to /code-format)
+          ↓
+    /code-rules-check skill (audit the changeset)
+          ↓              ↓ Violations?
+    Clean ✅        (fix, loop back to /code-format)
 ```
 
 **Remember**: Invoke Skills for all operations. If unsure which skill to use, refer to the Command-Line Operations Reference above.
 
 #### 4. Completion Phase
 
-- Ensure all required checks pass (format, check, clippy, tests)
+- Ensure all required checks pass (format, check, clippy, tests, rules check)
 - If tests were skipped, document why and the risk assessment
-- Review changes against guidelines (use `/code-review`)
+- Use `/code-review` when the change is large or risky enough to need bugs, regressions, security, and soundness examined as well
 - Document any warnings you couldn't fix and why
 
 ### Core Development Principles
@@ -332,8 +355,8 @@ Edit File → /code-format skill
   strong, explicit justification — "I prefer it this way" is not sufficient. If you believe a pattern should change, propose
   the change to the pattern documentation first; do not introduce one-off divergences.
 - **Research → Plan → Implement**: Never jump straight to coding
-- **Guidelines before planning**: `/code-guidelines` is a prerequisite for both planning AND Plan mode, not just implementation. A plan written without loaded guidelines is considered incomplete.
-- **Guideline compliance**: Follow guidelines from [Code Guidelines](#2-code-guidelines)
+- **Rules before planning**: `/code-rules` is a prerequisite for both planning AND Plan mode, not just implementation. A plan written without the loaded rules is considered incomplete.
+- **Rule compliance**: Follow the rules from [Code Rules](#2-code-rules), and verify with `/code-rules-check` before committing
 - **Zero tolerance for errors**: All automated checks must pass
 - **Clarity over cleverness**: Choose clear, maintainable solutions
 
@@ -344,25 +367,28 @@ Edit File → /code-format skill
 - **Format code before checks/commit**: Use `/code-format` skill
 - **Fix all warnings**: Use `/code-check` skill for clippy
 - **Test behavior changes**: Use `/code-test` skill after checks are green
+- **Audit before committing**: Use `/code-rules-check` skill on the finished changeset
 
 ### Summary: Key Takeaways for AI Agents
 
 | What                | Where                                  | When                                                  |
 |---------------------|----------------------------------------|-------------------------------------------------------|
-| **Plan work**       | `/code-guidelines`                     | BEFORE creating any plan                              |
+| **Plan work**       | `/code-rules`                          | BEFORE creating any plan                              |
 | **Run commands**    | `.agents/skills/`                      | Check Skills BEFORE any command                       |
-| **Write code**      | [Code Guidelines](#2-code-guidelines)  | Load guidelines before implementation                 |
+| **Write code**      | [Code Rules](#2-code-rules)            | Load the rules before implementation                  |
 | **Format**          | `/code-format`                         | Before checks or before committing                    |
 | **Check**           | `/code-check`                          | After formatting                                      |
 | **Lint**            | `/code-check`                          | Fix ALL warnings                                      |
 | **Test**            | `/code-test`                           | After checks green; on behavior changes               |
-| **Review**          | `/code-review`                         | Before commits / PRs                                  |
+| **Rules check**     | `/code-rules-check`                    | After tests pass; before committing                   |
+| **Doc format**      | `/docs-fmt-check`                      | After editing `docs/code/`                            |
+| **Review**          | `/code-review`                         | Before PRs; on large or risky changes                 |
 
 **Golden Rules:**
 
 1. ✅ Invoke Skills for all common operations
 2. ✅ Skills wrap just tasks with proper guidance
-3. ✅ Follow the workflow: Format → Check → Clippy → Test
+3. ✅ Follow the workflow: Format → Check → Clippy → Test → Rules check
 4. ✅ Zero tolerance for errors and warnings
 5. ✅ Every change improves the codebase
 

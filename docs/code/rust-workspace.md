@@ -1,112 +1,146 @@
 ---
 name: "rust-workspace"
-description: "Workspace crate categories, dependency rules, member ordering. Load when creating crates, managing workspace structure, or reviewing dependency direction"
-type: arch
+description: "Flat member layout, alphabetical members, one-way binary-to-library dependency edge, shared dependency inheritance. Load when adding a workspace member or editing the root Cargo.toml"
+type: "arch"
 scope: "global"
 ---
 
-# Rust Workspace Patterns
+# Workspace Layout
 
-**MANDATORY for ALL workspace-level organization in this workspace**
+**MANDATORY for ALL workspace-level organization in the workspace**
 
-## Table of Contents
+The workspace is flat and small: every member is a directory at the repository root, and the dependency graph
+has exactly one shape — the binary crate consumes the libraries, and nothing consumes the binary. A reader who
+knows that can place a new crate without reading any manifest.
 
-1. [Crate Category Hierarchy](#1-crate-category-hierarchy)
-2. [Dependency Rules per Category](#2-dependency-rules-per-category)
-3. [Ordering Requirements](#3-ordering-requirements)
-4. [Checklist](#checklist)
+The contents of an individual `Cargo.toml` — section ordering, dependency ordering within a section, feature
+naming — are owned by [rust-crates](rust-crates.md). This document owns where members live and which of them
+may depend on which.
 
-## 1. Crate Category Hierarchy
+## 1. Members Live At The Repository Root
 
-This workspace is a Meson-based monorepo. Cargo workspace members live under `subprojects/<crate>/` and are split into the following architectural layers, from foundation to leaf:
+A workspace member is a directory at the root, named exactly as the package it contains. There is no
+`crates/` or `bin/` directory to sort members into, and no prefix scheme: the package in `nx-object/` is named
+`nx-object`, and its rule documents, its `-p` flag, and its directory all spell the same string.
 
-### `sys/*` — Foundation Layer
+A member that exists only to support another member's build nests under it, because it has no independent
+reason to be found. Build-support crates are `publish = false`.
 
-**Purpose**: Direct interface to Horizon OS primitives. Foundation for everything else.
+```toml
+# ❌ Bad — invents a layer the repository does not have; `cargo build -p nx-object` still
+# works, so nothing fails, and the paths silently disagree with every doc and script.
+members = [
+    "crates/nx-object",
+    "bin/cargo-nx",
+]
+```
 
-**What belongs here:**
+```toml
+# ✅ Good — the directory, the package name, and the `-p` argument are one string, so a
+# reader who has seen the member list can locate any crate without searching.
+members = [
+    "cargo-nx",
+    "cargo-nx/gen",
+    "nx-netloader",
+    "nx-object",
+]
+```
 
-- **`nx-svc`**: Raw Supervisor Call (SVC) bindings — the layer everything else depends on.
-- **`nx-cpu`**: CPU-level utilities (cache, registers).
-- **`nx-sys-mem`**: Low-level memory management on top of `nx-svc`.
-- **`nx-sys-sync`**: Low-level synchronization primitives on top of `nx-svc`.
-- **`nx-sys-thread`**, **`nx-sys-thread-tls`**: Thread management.
+## 2. The `members` Array Is Alphabetically Ordered
 
-### Higher-level Crates — Standard-library-style abstractions
+Entries are sorted alphabetically, which puts a nested build-support member directly under its parent
+(`cargo-nx`, then `cargo-nx/gen`) without a second rule to say so.
 
-**Purpose**: `std`-flavoured abstractions built on the `sys/*` layer.
+The ordering is not cosmetic: two branches each adding a member conflict only when the names collide in the
+sort, instead of both appending to the same last line.
 
-**What belongs here:**
+## 3. Libraries Never Depend On The Binary
 
-- **`nx-alloc`**: Global allocator (uses `nx-svc` + `nx-sys-sync`).
-- **`nx-rand`**: Random number generation.
-- **`nx-time`**: Time utilities.
-- **`nx-std-sync`**: High-level sync primitives (`Mutex`, `RwLock`, …).
-- **`nx-rt`**: Runtime support.
-- **`nx-panic-handler`**: Panic handler.
+`cargo-nx` is the binary crate. It depends on `nx-netloader` and `nx-object`; neither of those, nor any
+library added later, may depend on `cargo-nx`. The edge points one way, always.
 
-### Service Crates (`nx-service-*`) — Horizon OS Services
+The reason is that the libraries are the reusable half. A library that reaches back into the binary drags the
+whole CLI — its argument parser, its logging setup, its subcommand surface — into anything that wants only
+the object-file writer, and the coupling is invisible until someone tries to use the library elsewhere.
 
-**Purpose**: Bindings to specific Horizon OS services exposed via IPC.
+A build-support member is the one exception, and it is not a counterexample: it depends on its parent as a
+**build-dependency** to generate an artifact, not to be linked into it.
 
-**What belongs here:**
+```toml
+# ❌ Bad — a library reaching back into the CLI for one helper. The next consumer of
+# nx-object now compiles clap and tokio to write an NRO header.
+[package]
+name = "nx-object"
 
-- **`nx-sf`**: Service framework primitives.
-- **`nx-service-sm`**, **`nx-service-time`**, **`nx-service-applet`**, **`nx-service-hid`**, **`nx-service-vi`**, **`nx-service-set`**, **`nx-service-apm`**, **`nx-service-nv`**: Per-service IPC clients.
+[dependencies]
+cargo-nx = { path = "../cargo-nx" }
+```
 
-### `nx-std` — Umbrella Staticlib
+```toml
+# ✅ Good — the binary consumes the libraries and the libraries know nothing of it, so
+# nx-object can be depended on without pulling in a command-line interface.
+[package]
+name = "cargo-nx"
 
-**Purpose**: Single `staticlib` crate that re-exports the C-FFI symbols (`__nx_*`) consumed by linker overrides. Each enabled higher-level / `sys/*` / service crate exposes its FFI surface via a public `ffi` module behind an `ffi` Cargo feature; `nx-std` re-exports them based on enabled features.
+[dependencies]
+nx-netloader = { version = "0.1.0", path = "../nx-netloader" }
+nx-object = { version = "0.1.0", path = "../nx-object", features = ["elf", "lz4"] }
+```
 
-This is the only crate that produces a linkable artifact for the C side.
+## 4. A Dependency Shared By Two Members Is Declared Once
 
-### `subprojects/tests/`
+A dependency that more than one member needs is declared in the root `[workspace.dependencies]`, and each
+member inherits it with `.workspace = true`. A dependency only one member needs stays in that member's
+manifest.
 
-The Switch-hardware NRO test suite. C code linking against the Rust crates to verify FFI correctness.
+Declaring a shared version twice means the two copies drift on the next bump, and Cargo will happily build
+both, so the divergence surfaces as a duplicated crate in the tree rather than as an error.
 
-## 2. Dependency Rules per Category
+```toml
+# ❌ Bad — two members pinning the same crate independently. A bump applied to one leaves
+# the workspace compiling two incompatible thiserror versions with no warning.
 
-| From \ To              | `sys/*` | higher-level | service | `nx-std` |
-|------------------------|:-------:|:------------:|:-------:|:--------:|
-| **`sys/*`**            | ✅       | ❌            | ❌       | ❌        |
-| **higher-level**       | ✅       | ✅            | ❌       | ❌        |
-| **service**            | ✅       | ✅            | ✅       | ❌        |
-| **`nx-std`** umbrella  | ✅       | ✅            | ✅       | ❌        |
+# cargo-nx/Cargo.toml
+[dependencies]
+thiserror = "2.0"
 
-**Key rules:**
+# nx-object/Cargo.toml
+[dependencies]
+thiserror = "1.0"
+```
 
-- **`sys/*` crates** depend only on other `sys/*` crates and `nx-svc`. They NEVER depend on higher-level, service, or umbrella crates.
-- **Higher-level crates** depend on `sys/*` and other higher-level crates. They MUST NOT depend on service or umbrella crates.
-- **Service crates** depend on `sys/*`, higher-level, and other service crates as needed (e.g., service-applet depends on service-sm). They MUST NOT depend on the `nx-std` umbrella.
-- **`nx-std`** is the sink: every other crate may flow into it; nothing depends on `nx-std`.
-- **No circular dependencies** at any layer.
-- The `ffi` feature on each crate gates its C-FFI module; `nx-std` enables exactly those `ffi` features that match the Meson `use_nx*` setup-time options.
+```toml
+# ✅ Good — one version, one place to bump it, and a member's manifest states only that it
+# needs the crate rather than which version it happens to want.
 
-## 3. Ordering Requirements
+# Cargo.toml
+[workspace.dependencies]
+thiserror = "2.0"
 
-### Workspace Members
+# cargo-nx/Cargo.toml
+[dependencies]
+thiserror.workspace = true
+```
 
-The root `Cargo.toml` `members` array MUST be ordered alphabetically.
-
-**Rationale**: Ensures consistent merge conflict resolution and predictable workspace member listing.
-
-### Dependencies in Cargo.toml
-
-All `Cargo.toml` dependency sections (`[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`) MUST be ordered alphabetically.
-
-**Rationale**: Ensures consistent merge conflict resolution and maintainable dependency management.
-
-## References
-
-- [rust-crate](rust-crate.md) - Related: Crate manifest conventions
+A member that needs different features from the shared version writes
+`thiserror = { workspace = true, features = ["..."] }` rather than restating the version.
 
 ## Checklist
 
 Before committing workspace changes, verify:
 
-- [ ] New crates are placed in the correct architectural layer (`sys/*` foundation, higher-level, service, or umbrella).
-- [ ] Dependency direction follows the rules (no upward edges, no cycles).
-- [ ] Workspace `members` array is alphabetically ordered.
-- [ ] All `Cargo.toml` dependency sections are alphabetically ordered.
-- [ ] `sys/*` crates have no dependencies on higher-level, service, or `nx-std` crates.
-- [ ] If the crate exposes a C-FFI surface, it lives behind an `ffi` Cargo feature and is re-exported by `nx-std` when the corresponding `use_nx*` Meson option is enabled.
+- [ ] A new member is a directory at the repository root, named exactly as its package
+- [ ] A build-support member nests under the crate it serves and sets `publish = false`
+- [ ] The root `members` array is alphabetically ordered
+- [ ] No library member declares a dependency on `cargo-nx`
+- [ ] A dependency needed by two or more members is declared in `[workspace.dependencies]`
+- [ ] Members consuming a shared dependency use `<name>.workspace = true`, adding features but never a version
+
+## References
+
+- [rust-crates](rust-crates.md) - Related: Owns `Cargo.toml` section ordering, dependency ordering within a
+  section, and feature-flag naming
+- [rust-mods-graph](rust-mods-graph.md) - Foundation: Owns the same one-way rule one level down, between
+  modules inside a crate
+- [principle-information-hiding](principle-information-hiding.md) - Foundation: Why a library exposing itself
+  to its consumer's consumer is a coupling defect

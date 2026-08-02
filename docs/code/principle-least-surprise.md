@@ -1,6 +1,6 @@
 ---
 name: "principle-least-surprise"
-description: "Principle of Least Surprise — follow Rust idioms and conventions. Load when naming functions, designing constructors, implementing traits, or reviewing API surfaces"
+description: "Principle of Least Surprise — code behaves as its name and shape predict; deviations are documented. Load when naming things, designing constructors, or reviewing an API surface"
 type: "principle"
 scope: "global"
 ---
@@ -11,230 +11,130 @@ scope: "global"
 
 ## Rule
 
-Code should behave the way a Rust developer expects it to behave based on its name, signature, and the idioms of the language. **The Rust standard library is the primary reference** — when `std` establishes a pattern for naming, trait usage, or method semantics, follow it. A function name is a semantic contract — if a developer can correctly guess what your function does, what it returns, and whether it changes state without reading the implementation, you've upheld this principle.
+Code must behave the way a reader predicts from its name, signature, and shape. A name is a contract: what a
+function returns, what it touches, and whether it can fail should be guessable without opening it. **The Rust
+standard library is the primary reference**: where `std` establishes a pattern for naming, trait usage, or
+method semantics, follow it. The conventions here:
 
-Follow these specific conventions (all derived from `std` patterns):
-
-1. **Standard constructors**: Use `new` for infallible construction that takes ownership of its arguments. Use `From`/`Into` for infallible type conversions. Use `TryFrom` for fallible conversions that can fail with a typed error. Never invent custom constructor names like `create` or `make` when `new`, `From`, or `TryFrom` conveys the same intent.
-
-2. **Standard parsing**: Implement `std::str::FromStr` for types that can be parsed from a string, instead of custom `parse`, `from_string`, or `from_str` inherent methods. This unlocks `"value".parse::<MyType>()` for free — the idiomatic way to parse strings in Rust.
-
-3. **Conventional method prefixes**: Follow the verb conventions Rust developers rely on to predict behavior without reading source code:
-   - `get_*` / `set_*`: Field access, simple and cheap. Avoid `get_` entirely when a bare noun suffices (prefer `len()` over `get_len()`).
-   - `with_*`: Returns a modified copy or consumes self to produce a new value; does not mutate in place.
-   - `to_*`: Expensive conversion that produces a new owned value (e.g., `to_string`, `to_vec`).
-   - `as_*`: Cheap, borrowed view of the data (e.g., `as_str`, `as_bytes`). Must not allocate.
-   - `into_*`: Consumes self, converting to a different type (e.g., `into_inner`, `into_vec`).
-   - `is_*` / `has_*`: Returns `bool`. Never return anything else.
-   - `try_*`: Fallible variant of an operation that would otherwise panic or return a non-`Result` type.
-
-4. **Symmetry and consistency**: If your codebase uses `start`/`stop`, don't introduce `begin`/`halt`. If you have `add`, the inverse is `remove`, not `delete_item`. Broken patterns force developers to consult docs for what should be guessable.
-
-5. **No hidden side effects**: A function named `calculate_tax` must not write to a database, send an email, or mutate global state. If a function has side effects, its name must reflect them. Better yet, split computation from side effects.
+1. **Names follow the standard library.** Which constructor, which prefix, which receiver, and what each
+   promises about cost and ownership are settled by `std` and collected in the `rust-fn` rule document; this
+   document owns the cases that are about behavior rather than naming.
+2. **Construction reveals its cost.** A value is never half-initialized: anything that connects, spawns, or
+   awaits says so in its name.
+3. **Teardown**: the inverse of a named constructor is `shutdown()` or `close()`. Pick one per type, stay
+   consistent, and make it safe to call twice.
+4. **Paired names**: if the codebase uses `start`/`stop`, do not introduce `begin`/`halt`. The inverse of
+   `add` is `remove`, not `delete_item`. The shape the pair shares is owned by `principle-symmetry`; this
+   rule owns its vocabulary.
+5. **Parameters**: more than two or three related inputs go in a config struct or a builder, never a positional
+   `bool`. `pack_nro(elf, assets, true, false)` cannot be reviewed.
+6. **No hidden effects**: a function named for a computation does not write to disk, open a connection, or
+   mutate global state. Where a lookup and an effect both exist, they are two functions.
 
 ## Examples
 
-1. **Use `From`/`TryFrom` instead of custom constructors**
-Standard conversion traits give callers a predictable API and unlock `.into()` ergonomics.
+1. **`new` does not perform I/O; async construction is a named constructor**
+   `new` cannot await, so a type that must connect before it is usable cannot be built by one.
 
 ```rust
-// Bad — custom constructor name when TryFrom conveys the same intent
-struct Port(u16);
-
-impl Port {
-    fn create(value: u32) -> Result<Self, PortError> {
-        let port = u16::try_from(value).map_err(|_| PortError::OutOfRange)?;
-        if port == 0 {
-            return Err(PortError::Zero);
-        }
-        Ok(Self(port))
+// ❌ Bad — `new` dials the console in the background and returns immediately.
+// Every method then needs a "are we connected yet?" guard, and a caller who
+// forgets one gets an error from a stream that was never established.
+impl NetloaderClient {
+    pub fn new(console: ConsoleAddr) -> Self {
+        let stream = Arc::new(OnceLock::new());
+        tokio::spawn(dial(console, Arc::clone(&stream)));
+        Self { stream }
     }
-}
-
-// Caller must discover and remember the non-standard name
-let port = Port::create(8080)?;
-```
-
-```rust
-// Good — TryFrom is the idiomatic trait for fallible conversions
-struct Port(u16);
-
-impl TryFrom<u32> for Port {
-    type Error = PortError;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        let port = u16::try_from(value).map_err(|_| PortError::OutOfRange)?;
-        if port == 0 {
-            return Err(PortError::Zero);
-        }
-        Ok(Self(port))
-    }
-}
-
-// Caller uses the standard pattern — no surprises
-let port = Port::try_from(8080)?;
-```
-
-2. **Implement `FromStr` instead of custom parsing methods**
-Custom parsing methods hide functionality that `FromStr` makes discoverable and composable.
-
-```rust
-// Bad — custom method name hides standard parsing intent
-struct SubgraphId(String);
-
-impl SubgraphId {
-    fn from_string(s: &str) -> Result<Self, ParseError> {
-        if s.is_empty() {
-            return Err(ParseError::Empty);
-        }
-        if !s.starts_with("Qm") {
-            return Err(ParseError::InvalidPrefix);
-        }
-        Ok(Self(s.to_owned()))
-    }
-}
-
-// Caller must know about the non-standard method name
-let id = SubgraphId::from_string("QmHash123")?;
-```
-
-```rust
-// Good — FromStr enables the standard .parse() pattern
-struct SubgraphId(String);
-
-impl std::str::FromStr for SubgraphId {
-    type Err = ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.is_empty() {
-            return Err(ParseError::Empty);
-        }
-        if !s.starts_with("Qm") {
-            return Err(ParseError::InvalidPrefix);
-        }
-        Ok(Self(s.to_owned()))
-    }
-}
-
-// Callers use the idiomatic pattern — works with any string type
-let id: SubgraphId = "QmHash123".parse()?;
-```
-
-3. **Follow `as_` / `to_` / `into_` conventions**
-Misusing these prefixes breaks the developer's mental model of cost and ownership.
-
-```rust
-// Bad — `as_` prefix but allocates a new String (expensive, not a borrow)
-impl DeploymentId {
-    fn as_string(&self) -> String {
-        format!("deployment-{}", self.0)
-    }
-}
-
-// Bad — `to_` prefix but takes ownership of self (should be `into_`)
-impl RawConfig {
-    fn to_validated(self) -> ValidatedConfig {
-        ValidatedConfig { inner: self.inner }
+    pub async fn send_nro(&self, name: &str, nro: &[u8]) -> Result<(), SendNroError> {
+        let stream = self.stream.get().ok_or(SendNroError::NotConnected)?; // ...on every method
     }
 }
 ```
 
 ```rust
-// Good — `as_` returns a borrowed view (cheap, no allocation)
-impl DeploymentId {
-    fn as_str(&self) -> &str {
-        &self.0
+// ✅ Good — the named constructor awaits the handshake and hands back a client
+// that is, by construction, usable. No method needs a readiness guard.
+impl NetloaderClient {
+    pub async fn connect(console: ConsoleAddr) -> Result<Self, ConnectError> {
+        let stream = TcpStream::connect(console.socket_addr()).await?;
+        Ok(Self { stream })
     }
-}
-
-// Good — `to_` creates a new owned value (may allocate)
-impl DeploymentId {
-    fn to_display_string(&self) -> String {
-        format!("deployment-{}", self.0)
-    }
-}
-
-// Good — `into_` consumes self for zero-cost conversion
-impl RawConfig {
-    fn into_validated(self) -> ValidatedConfig {
-        ValidatedConfig { inner: self.inner }
-    }
+    pub async fn send_nro(&self, name: &str, nro: &[u8]) -> Result<(), SendNroError> {}
 }
 ```
 
-4. **Boolean methods use `is_` / `has_` prefixes**
-Developers seeing `is_` or `has_` expect `bool`. Returning anything else is a high-surprise violation.
+2. **Separate the lookup from the effect**
+   Only one of "which packer handles this output format" and "run it" touches the filesystem.
 
 ```rust
-// Bad — `is_` prefix but returns an Option, not a bool
-impl Job {
-    fn is_complete(&self) -> Option<CompletionTime> {
-        self.completed_at
-    }
+// ❌ Bad — a name that reads like a query, a body that writes a file. A caller checking
+// "is there a packer for this format?" inside a filter silently emits an artifact for
+// every format it tests.
+pub fn packer_for(format: OutputFormat) -> Option<PackerId> {
+    let spec = PACKERS.iter().find(|p| p.handles(format))?;
+    spec.write_artifact(); // hidden effect
+    Some(spec.id)
 }
 ```
 
 ```rust
-// Good — `is_` returns bool, separate accessor for the data
-impl Job {
-    fn is_complete(&self) -> bool {
-        self.completed_at.is_some()
-    }
-
-    fn completed_at(&self) -> Option<CompletionTime> {
-        self.completed_at
-    }
-}
-```
-
-5. **No hidden side effects behind pure-looking names**
-A function named after a computation must not secretly perform I/O or mutate shared state.
-
-```rust
-// Bad — name suggests pure computation, but writes to database
-fn calculate_total(items: &[LineItem], db: &Database) -> Result<Money> {
-    let total = items.iter().map(|i| i.price).sum();
-    db.update_order_total(total)?; // hidden side effect
-    Ok(total)
-}
-```
-
-```rust
-// Good — separate computation from side effects
-fn calculate_total(items: &[LineItem]) -> Money {
-    items.iter().map(|i| i.price).sum()
+// ✅ Good — the query is pure; the effect says what it does in its name.
+pub fn packer_for(format: OutputFormat) -> Option<&'static PackerSpec> {
+    PACKERS.iter().find(|p| p.handles(format))
 }
 
-// Side effect is explicit in the caller
-let total = calculate_total(&items);
-db.update_order_total(total)?;
+/// Pack the built executable into `format` and write it out. Returns the packer that ran.
+pub fn write_artifact(format: OutputFormat, elf: &Elf) -> Result<Option<PackerId>, PackError> {
+    let Some(spec) = packer_for(format) else { return Ok(None) };
+    spec.pack(elf)?;
+    Ok(Some(spec.id))
+}
 ```
 
 ## Why It Matters
 
-Every deviation from Rust idioms forces developers to stop and read the implementation to understand what a function does. This slows down code review, increases the chance of misuse, and makes the codebase harder to navigate. When code follows conventions, developers build accurate mental models from names alone — they can compose APIs correctly without consulting docs for every call. When code breaks conventions, bugs emerge from false assumptions: a developer calls `as_string()` in a hot loop because `as_` means "cheap borrow," not realizing it allocates on every call.
+Every broken convention forces a reader to open the implementation, and across a codebase that cost is paid
+mostly in bugs: a caller who assumes `as_string()` is a borrow calls it once per RomFS entry.
 
-The `std` library is the gold standard because every Rust developer has internalized its patterns. When your types behave like `std` types — `FromStr` for parsing, `From`/`TryFrom` for conversions, `as_`/`to_`/`into_` for access semantics — developers apply their existing mental model without friction. Standard trait implementations also unlock ecosystem integration — serde, clap, and other libraries can use `From`, `TryFrom`, `FromStr`, and `Display` automatically. Custom methods require custom glue code.
+Consistency also compounds. Because every resource-owning type here is built by a named async constructor,
+`Type::new(..)` tells a reviewer the type owns no resources — or that something is wrong. Standard traits buy
+ecosystem integration on top: serde, clap, and `?` all compose with `FromStr`, `From`, and `TryFrom`, while a
+custom constructor requires custom glue at every boundary.
 
 ## Pragmatism Caveat
 
-Conventions are guidelines, not laws. When a domain term is clearer than the conventional prefix, the domain term wins — but this should be rare and justified. For example, a method named `compile` on a query builder is clearer than `into_compiled` even though it consumes `self`, because "compile" is the established domain verb.
+A domain term beats a convention when it is genuinely clearer. `pack` on an NRO builder beats `into_packed`
+even though it consumes `self`, because pack is the established verb. Prefer the domain word
+only when it is _more_ predictable, not merely more clever. Some deviations are imposed from outside: a trait
+from a dependency dictates its own method names, so match the foreign convention at the boundary and the
+workspace convention everywhere else.
 
-When you deviate from a convention, add a brief comment explaining why the idiomatic alternative was not used. Undocumented deviations are always wrong — they leave the next developer guessing whether the deviation was intentional or accidental.
+When you deviate deliberately — a method that never fails, a fire-and-forget send, a name a dependency forced —
+say why in a doc comment at the declaration. An undocumented deviation is always wrong; the next reader cannot
+tell it from a mistake.
 
 ## Checklist
 
-- [ ] Constructors use `new`, `From`, or `TryFrom` — not custom names like `create`, `make`, or `build` (unless it's a builder pattern)
-- [ ] Types parseable from strings implement `FromStr`, not custom `from_string` / `parse_from` methods
-- [ ] `as_*` methods are cheap borrows; `to_*` methods produce owned values; `into_*` methods consume self
-- [ ] `is_*` and `has_*` methods return `bool` and nothing else
-- [ ] Functions named after computations are pure — side effects are explicit in names or separated into distinct functions
-- [ ] Symmetric operations use conventional pairs (`start`/`stop`, `add`/`remove`, `open`/`close`)
+Before committing code, verify:
+
+- [ ] Names follow the standard library's vocabulary; the concrete forms are checked against `rust-fn`
+- [ ] No value is observable half-initialized; anything that connects or awaits says so in its name
+- [ ] Every named constructor that acquires a resource has a matching `shutdown()`/`close()`, and calling
+      it twice is safe
+- [ ] No function named for a query performs an effect; lookup and effect are separate functions
+- [ ] More than two or three related parameters are a config struct or a builder; no positional `bool`
+- [ ] Any intentional deviation (a domain verb, a dependency-imposed shape) is documented at the declaration
 
 ## References
 
-- [principle-type-driven-design](principle-type-driven-design.md) - Related: Newtypes and validated types that benefit from idiomatic trait implementations
-- [principle-validate-at-edge](principle-validate-at-edge.md) - Related: Edge validation via `FromStr` and `TryFrom` as idiomatic parsing boundaries
+- [principle-type-driven-design](principle-type-driven-design.md) - Related: The same discipline, for types
+- [principle-validate-at-edge](principle-validate-at-edge.md) - Related: `FromStr`/`TryFrom` parse at the edge
+- [principle-idempotency](principle-idempotency.md) - Related: `connect`/`shutdown` are safe to call twice
+- [principle-single-responsibility](principle-single-responsibility.md) - Related: A type that cannot be named
+  in one sentence cannot have a predictable API
+- [principle-symmetry](principle-symmetry.md) - Related: A prediction is only available where the same idea
+  keeps the same shape
 
 ## External References
 
@@ -242,4 +142,3 @@ When you deviate from a convention, add a brief comment explaining why the idiom
 - [Principle of Least Surprise (principles-wiki.net)](https://principles-wiki.net/principles:principle_of_least_surprise)
 - [The Principle of Least Astonishment](https://dev.to/notmattlucas/the-principle-of-least-astonishment-3f9k)
 - [What is the Principle of Least Astonishment?](https://softwareengineering.stackexchange.com/a/187462)
-- [Wat — A lightning talk by Gary Bernhardt](https://www.destroyallsoftware.com/talks/wat)

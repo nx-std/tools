@@ -1,17 +1,17 @@
 ---
 name: "code-pattern"
-description: "Structure template for `docs/code/pattern-*.md` guideline docs. Load when creating or editing pattern docs in docs/code/"
-type: meta
+description: "Structure template for `docs/code/pattern-*.md` rule documents. Load when creating or editing pattern docs in docs/code/"
+type: "meta"
 scope: "global"
 ---
 
-# Pattern Code Guideline Template
+# Pattern Rule Document Template
 
 **MANDATORY structure for ALL `docs/code/pattern-*.md` documents**
 
 ## Structure
 
-Every pattern guideline document contains the following sections in order.
+Every pattern rule document contains the following sections in order.
 
 ### Frontmatter (required)
 
@@ -31,9 +31,12 @@ See [code.md §3](code.md#3-naming-schema) for full naming rules.
 
 H1 pattern name, optionally with a parenthetical clarification, e.g. "Typestate Pattern (State Machines with Types)".
 
-#### Applicability (required)
+#### Scope line (omitted)
 
-Always the bold line `**MANDATORY for ALL Rust code in the workspace**`.
+**No scope line.** A pattern document is `scope: "global"` and governs all Rust code in the
+workspace, so a bold line saying so restates the frontmatter, the title, and the corpus-wide
+mandate in [code.md §1](code.md#1-core-principles). The H1 is followed directly by `## Rule`.
+See [code.md §5](code.md#5-document-structure).
 
 ### Body
 
@@ -45,10 +48,13 @@ Includes guidance on how to recognize situations where the pattern is needed.
 #### Examples (required)
 
 Bad/Good code pairs (at least one, recommended not more than 5) in Rust.
+Patterns documented here MUST already be used by a workspace member — verify that before writing, then write the example from scratch.
+Do not document patterns borrowed from other languages or ecosystems that this workspace does not use.
 Each example has a brief description providing context, followed by the Bad/Good code pair.
 When more than one example is provided, present them as a numbered list.
 Always show Bad first, then Good.
 Use comments to explain why each is bad or good.
+Examples are fabricated: show the least invented code that carries the pattern, cite no module, and never transcribe real code — no rename anywhere in the workspace may be able to falsify the doc ([code](code.md) §6).
 
 **Note:** The templates below use `\`` to represent backticks.
 Do not escape backticks in the actual document — use literal code block fences.
@@ -59,12 +65,12 @@ Do not escape backticks in the actual document — use literal code block fences
 {{description and context}}
 
 \`\`\`rust
-// Bad — {{why this doesn't use the pattern}}
+// ❌ Bad — {{why this doesn't use the pattern}}
 {{bad_code}}
 \`\`\`
 
 \`\`\`rust
-// Good — {{why this applies the pattern correctly}}
+// ✅ Good — {{why this applies the pattern correctly}}
 {{good_code}}
 \`\`\`
 ```
@@ -76,12 +82,12 @@ Do not escape backticks in the actual document — use literal code block fences
 {{description and context}}
 
 \`\`\`rust
-// Bad — {{why this doesn't use the pattern}}
+// ❌ Bad — {{why this doesn't use the pattern}}
 {{bad_code}}
 \`\`\`
 
 \`\`\`rust
-// Good — {{why this applies the pattern correctly}}
+// ✅ Good — {{why this applies the pattern correctly}}
 {{good_code}}
 \`\`\`
 
@@ -89,12 +95,12 @@ Do not escape backticks in the actual document — use literal code block fences
 {{description and context}}
 
 \`\`\`rust
-// Bad — {{why this doesn't use the pattern}}
+// ❌ Bad — {{why this doesn't use the pattern}}
 {{bad_code}}
 \`\`\`
 
 \`\`\`rust
-// Good — {{why this applies the pattern correctly}}
+// ✅ Good — {{why this applies the pattern correctly}}
 {{good_code}}
 \`\`\`
 ```
@@ -118,7 +124,7 @@ Each item is a concrete check to confirm the pattern is applied correctly.
 
 #### References (optional)
 
-Cross-references to related guideline docs within the project.
+Cross-references to related rule documents within the project.
 Pattern docs may link to principle docs as `Foundation` and to other pattern docs as `Related`.
 See [code.md §4](code.md#4-cross-reference-rules) for relationship types and direction rules.
 
@@ -129,7 +135,7 @@ Not project-internal.
 
 ## Template
 
-Every pattern guideline document MUST follow this template:
+Every pattern rule document MUST follow this template:
 
 ```markdown
 ---
@@ -140,8 +146,6 @@ scope: "global"
 ---
 
 # {{Pattern Title}} [({{Optional Parenthetical Clarification}})]
-
-**MANDATORY for ALL Rust code in the workspace**
 
 ## Rule
 
@@ -178,4 +182,4 @@ scope: "global"
 
 ## References
 
-- [code](code.md) - Extends: Base code guideline documentation format specification
+- [code](code.md) - Extends: Base code rules documentation format specification

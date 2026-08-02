@@ -1,729 +1,424 @@
 ---
 name: "logging"
-description: "Structured logging with tracing, log levels, field formatting. Load when adding logs or configuring logging"
+description: "Structured logging with tracing: levels, field taxonomy, spans. Load when adding a log line or choosing a level"
 type: core
 scope: "global"
 ---
 
 # Logging Patterns
 
-**MANDATORY for ALL logging in the this workspace**
+**MANDATORY for ALL logging in this workspace**
 
-## PURPOSE
+A log line is a machine-parseable event, not a sentence: values go in fields, the message names what happened,
+and the field taxonomy below is shared by every crate so one query works across all of them.
 
-This document establishes consistent, production-grade logging patterns across the entire this codebase. These patterns ensure:
+## Logger Configuration
 
-- **Observability** - Clear visibility into system behavior
-- **Structured data** - Machine-parseable logs for aggregation and analysis
-- **Operational clarity** - Consistent log format across all services and crates
+Log levels come from two environment variables:
 
-## TABLE OF CONTENTS
-
-1. [Logger Configuration](#logger-configuration)
-2. [Core Principles](#core-principles)
-   - [1. Use `tracing` Crate Exclusively](#1-use-tracing-crate-exclusively)
-   - [User-Facing CLI Output](#user-facing-cli-output)
-   - [2. Structured Logging is Mandatory](#2-structured-logging-is-mandatory)
-   - [3. Line Length and Multiline Formatting](#3-line-length-and-multiline-formatting)
-   - [4. Consistent Log Levels](#4-consistent-log-levels)
-   - [5. Field Naming Conventions](#5-field-naming-conventions)
-3. [Field Formatting](#field-formatting)
-   - [1. Display Formatting (`%`)](#1-display-formatting-)
-   - [2. Debug Formatting (`?`)](#2-debug-formatting-)
-   - [3. Avoid Redundant Context](#3-avoid-redundant-context)
-4. [Log Level Guidelines](#log-level-guidelines)
-   - [1. Error Level](#1-error-level)
-   - [2. Warn Level](#2-warn-level)
-   - [3. Info Level](#3-info-level)
-   - [4. Debug Level](#4-debug-level)
-   - [5. Trace Level](#5-trace-level)
-5. [Message Formatting](#message-formatting)
-   - [1. Descriptive Messages, Not snake_case](#1-descriptive-messages-not-snake_case)
-   - [2. Brief and Clear](#2-brief-and-clear)
-   - [3. Action-Oriented Past Tense](#3-action-oriented-past-tense)
-   - [4. No Punctuation](#4-no-punctuation)
-6. [Complete Examples](#complete-examples)
-7. [Checklist](#checklist)
-8. [References](#references)
-
-## LOGGER CONFIGURATION
-
-### Default Log Level
-
-The logging system uses a **two-tier configuration** for log levels:
-
-**Default Levels:**
-
-- **workspace crates**: `info` level (configurable via `WORKSPACE_LOG` environment variable)
-- **External dependencies**: `error` level (configurable via `RUST_LOG` environment variable)
-
-**Environment Variables:**
+- **`WORKSPACE_LOG`** sets the baseline level for all workspace crates. Default `info`. Values: `error`,
+  `warn`, `info`, `debug`, `trace`.
+- **`RUST_LOG`** sets per-crate directives and overrides `WORKSPACE_LOG`. External dependencies default to
+  `error` to reduce noise.
 
 ```bash
-# WORKSPACE_LOG: Controls log level for all workspace crates
-# Default: info
-# Values: error, warn, info, debug, trace
-export WORKSPACE_LOG=info
-
-# RUST_LOG: Controls log level for specific crates (overrides WORKSPACE_LOG)
-# Use for fine-grained control or external dependencies
-export RUST_LOG="metadata_db=debug,sqlx=warn"
+export WORKSPACE_LOG=info                          # baseline for every workspace crate
+export RUST_LOG="nx_netloader=debug,tokio=warn"    # per-crate override, wins over WORKSPACE_LOG
 ```
 
-**How It Works:**
-
-1. **`WORKSPACE_LOG`** sets the baseline level for all workspace crates (metadata_db, worker, server, etc.)
-2. **`RUST_LOG`** can override specific crates or enable logging for external dependencies
-3. External crates default to `error` level to reduce noise
-4. Directives in `RUST_LOG` take precedence over `WORKSPACE_LOG`
-
-**Best Practices:**
-
-- Use `WORKSPACE_LOG=info` for production (default)
-- Use `WORKSPACE_LOG=debug` for local development
-- Use `RUST_LOG` for targeted debugging of specific modules
-- Never use `trace` level in production (performance impact)
-
-## CORE PRINCIPLES
-
-### 1. Use `tracing` Crate Exclusively
-
-**ALWAYS** use the fully qualified form `tracing::<macro>!()` for all *diagnostic logging* and `#[tracing::instrument]` for the instrument attribute. **NEVER** use the `log` crate or import tracing macros.
-
-The ban on `println!` / `eprintln!` applies to **diagnostic logging** — the observability output, gated by log levels, that developers and operators read. It does **NOT** apply to a CLI's **user-facing output**: the progress, results, and errors a user runs the tool to see are the program's product, not logs. See [User-Facing CLI Output](#user-facing-cli-output) below for the rule that governs them.
-
-```rust
-// ✅ CORRECT - Fully qualified tracing macros
-tracing::info!(job_id = %id, "job started");
-tracing::error!(error = %err, error_source = logging::error_source(&err), "job failed");
-
-// ✅ CORRECT - Fully qualified instrument attribute
-#[tracing::instrument(skip_all, fields(job_id = %job_id))]
-pub async fn process_job(job_id: JobId) -> Result<(), Error> {
-    // ...
-}
-
-// ❌ WRONG - Importing macros creates ambiguity
-use tracing::info;
-info!(job_id = %id, "job started");
-
-// ❌ WRONG - Importing instrument attribute
-use tracing::instrument;
-#[instrument(skip_all)]
-pub async fn process_job() -> Result<(), Error> {
-    // ...
-}
-
-// ❌ WRONG - Using println/eprintln
-println!("Job {} started", id);
-eprintln!("Error: {}", err);
-
-// ❌ WRONG - Using log crate
-log::info!("Job started");
-```
+Use `WORKSPACE_LOG=info` by default, `WORKSPACE_LOG=debug` for local development, and `RUST_LOG` for targeted
+debugging of a module.
 
 ### User-Facing CLI Output
 
 A command-line tool has **two distinct output channels**, and they MUST NOT be conflated:
 
-- **Diagnostic logging** — `tracing`, gated by `RUST_LOG` / `WORKSPACE_LOG`. Opt-in
-  output for debugging and observability. Governed by every rule in this document.
-- **User-facing output** — the progress lines, status, warnings, and error reports a
-  user runs the command to see. This is the program's **product**, written to
-  stdout/stderr unconditionally.
+- **Diagnostic logging** — `tracing`, gated by `RUST_LOG` / `WORKSPACE_LOG`. Opt-in output for debugging and
+  observability. Governed by every rule in this document.
+- **User-facing output** — the progress lines, status, warnings, and error reports a user runs the command to
+  see. This is the program's **product**, written to stdout/stderr unconditionally.
 
-User-facing output MUST go through a dedicated `ui` module that wraps `println!` /
-`eprintln!` behind a small, Cargo-style API (e.g. `ui::status`, `ui::warning`,
-`ui::error`). Calling `println!` / `eprintln!` directly — scattered across command
-code — remains **forbidden**: the `ui` module is the single sanctioned wrapper, so
-output style stays consistent and testable. This mirrors Cargo's own split between its
-`Shell` abstraction and its `tracing` / `log` diagnostics.
+User-facing output MUST go through a dedicated `ui` module that wraps `println!` / `eprintln!` behind a small,
+Cargo-style API (e.g. `ui::status`, `ui::warning`, `ui::error`). Calling `println!` / `eprintln!` directly —
+scattered across command code — remains **forbidden**: the `ui` module is the single sanctioned wrapper, so
+output style stays consistent and testable. This mirrors Cargo's own split between its `Shell` abstraction and
+its `tracing` / `log` diagnostics.
 
-In `cargo-nx`, that module is `cargo-nx/src/ui.rs`.
+## Core Principles
+
+### 1. Use `tracing` Crate Exclusively
+
+Always use the fully qualified `tracing::<macro>!()` form, and `#[tracing::instrument]` for the attribute.
+Never use `println!`, `eprintln!`, the `log` crate, or imported tracing macros.
 
 ```rust
-// ✅ CORRECT - user-facing output through the `ui` module
-ui::status("Building", "NRO artifact");
-ui::error(&err); // prints `error:` + the full `Caused by:` chain
+// ✅ Good — fully qualified, so nothing in scope can shadow the macro or the attribute
+tracing::info!(console_addr = %console_addr, "transfer started");
 
-// ✅ CORRECT - diagnostics still go through `tracing`
-tracing::debug!(target = %triple, "resolved build target");
+#[tracing::instrument(skip_all, fields(console_addr = %console_addr))]
+pub async fn send_nro(console_addr: SocketAddr, nro: &[u8]) -> Result<(), SendNroError> {
+    // ...
+}
 
-// ❌ WRONG - bare println!/eprintln! scattered in command code
-println!("Building...");
-eprintln!("Error: {err}");
+// ❌ Bad — an imported `info!`/`instrument` collides with any other macro of that name and hides which
+// logging facade a module is on
+use tracing::{info, instrument};
+
+#[instrument(skip_all)]
+pub async fn send_nro(console_addr: SocketAddr, nro: &[u8]) -> Result<(), SendNroError> {
+    info!(console_addr = %console_addr, "transfer started");
+}
+
+// ❌ Bad — bypasses the subscriber: no level filter, no fields, no span context, and it is not the `ui`
+// module either, so it is neither diagnostics nor product output
+println!("Sending {} to console", file_name);
+eprintln!("Error: {}", err);
+log::info!("transfer started");
 ```
 
 ### 2. Structured Logging is Mandatory
 
-**ALWAYS** use field-based structured logging. **AVOID** using string interpolation or formatting in log messages.
+Always use field-based structured logging. Never interpolate or format values into the message.
 
 ```rust
-// ✅ CORRECT - Structured fields
+// ✅ Good — every value is a field that can be filtered, grouped, and aggregated
 tracing::info!(
-    job_id = %job_id,
-    dataset_name = %dataset_name,
+    console_addr = %console_addr,
+    file_name = %file_name,
     duration_ms = elapsed.as_millis(),
-    "job completed"
+    "transfer completed"
 );
 
-// ❌ WRONG - String interpolation
-tracing::info!("Job {} for dataset {} completed in {}ms", job_id, dataset_name, elapsed.as_millis());
-
-// ❌ WRONG - format! macro in messages
-tracing::info!(format!("Job {} completed", job_id));
-
-// ❌ WRONG - Mixing string interpolation with fields
-tracing::info!(job_id = %job_id, "Job {} completed", job_id);
+// ❌ Bad — the values are baked into a string, so nothing can select on console_addr or sum duration_ms
+tracing::info!("Sent {} to {} in {}ms", file_name, console_addr, elapsed.as_millis());
+tracing::info!(format!("Sent {}", file_name));
+tracing::info!(file_name = %file_name, "Sent {}", file_name);
 ```
 
 ### 3. Line Length and Multiline Formatting
 
-**ALWAYS** split tracing macro calls into multiline format if they exceed 100 characters. **NEVER** write long single-line logging statements.
+Split any call over 100 characters, or with 3 or more fields, across lines.
+
+Formatting rules:
+
+- Opening parenthesis on the macro line: `tracing::info!(`
+- One field per line, indented 4 spaces
+- **The message string is the last parameter**, after all fields
+- Closing parenthesis and semicolon together: `);`
+- Single-line form only for simple calls under 100 characters
 
 ```rust
-// ✅ CORRECT - Multiline format for calls exceeding 100 chars
-tracing::info!(
-    job_id = %job_id,
-    dataset_name = %dataset_name,
-    duration_ms = elapsed.as_millis(),
-    "job completed"
-);
-
+// ✅ Good — multiline once the call passes 100 chars or 3 fields
 tracing::error!(
-    job_id = %job_id,
+    console_addr = %console_addr,
     error = %err,
     error_source = logging::error_source(&err),
-    "failed to mark job as running"
+    "failed to send the file name"
 );
 
-// ✅ CORRECT - Single line acceptable for short calls (< 100 chars)
-tracing::info!(worker_id = %id, "worker registered");
-tracing::debug!(query = %sql, "executing database query");
+// ✅ Good — short and simple, so one line stays readable
+tracing::info!(console_addr = %console_addr, "console discovered");
 
-// ❌ WRONG - Long single-line format (exceeds 100 chars)
-tracing::error!(job_id = %job_id, error = %err, error_source = logging::error_source(&err), "failed to mark job as running");
-
-// ❌ WRONG - Long single-line format with many fields
-tracing::info!(job_id = %job_id, dataset_name = %dataset_name, duration_ms = elapsed.as_millis(), rows = count, "job completed");
+// ❌ Bad — runs past the margin, so the fields are unreadable in a diff or a review comment
+tracing::error!(console_addr = %console_addr, error = %err, error_source = logging::error_source(&err), "failed to send the file name");
 ```
-
-**Formatting Rules:**
-
-- Opening parenthesis on same line as macro name: `tracing::info!(`
-- Each field on its own line with consistent indentation (4 spaces)
-- **Message string MUST be the last parameter** (after all fields)
-- Closing parenthesis and semicolon on same line: `);`
-- Use multiline format consistently for all calls with 3+ fields or exceeding 100 chars
-- Single-line format acceptable ONLY for simple calls under 100 characters
 
 ### 4. Consistent Log Levels
 
-**ALWAYS** use appropriate log levels based on operational significance. See [Log Level Guidelines](#-log-level-guidelines) for detailed rules.
+Choose the level from operational significance. See [Log Level Rules](#log-level-rules).
 
 ```rust
-// ✅ CORRECT - Appropriate log levels
-tracing::error!(error = %err, error_source = logging::error_source(&err), "database connection failed");
-tracing::warn!(retry_attempt = 3, "connection retry scheduled after backoff");
-tracing::info!(worker_id = %id, "worker registered");
-tracing::debug!(query = %sql, "executing database query");
-tracing::trace!(batch_size = rows.len(), "processing batch");
+// ✅ Good — level matches significance
+tracing::error!(error = %err, error_source = logging::error_source(&err), "transfer failed");
+tracing::info!(console_addr = %console_addr, "console discovered");
+tracing::debug!(attempt = attempt, "sending ping message");
 
-// ❌ WRONG - Misused log levels
-tracing::error!("worker registered"); // Not an error
-tracing::info!(error = %err, "database connection failed"); // Should be error level
-tracing::debug!(worker_id = %id, "worker registered"); // Important event, should be info
+// ❌ Bad — a routine event at error level trains a user to ignore the level that matters, and a real
+// failure at info level is never seen
+tracing::error!("console discovered");
+tracing::info!(error = %err, "transfer failed");
+tracing::debug!(console_addr = %console_addr, "console discovered");
 ```
 
 ### 5. Field Naming Conventions
 
-**ALWAYS** use `snake_case` for field names. **ALWAYS** use consistent field names across the entire codebase.
+Always use `snake_case`, and always use the same field name for the same thing across the whole codebase.
 
 ```rust
-// ✅ CORRECT - snake_case field names
+// ✅ Good — snake_case, and the names match the taxonomy below
 tracing::info!(
-    job_id = %job_id,
-    worker_node_id = %worker_id,
-    dataset_name = %dataset_name,
-    block_number = block_num,
+    console_addr = %console_addr,
+    file_name = %file_name,
+    file_length = file_length,
     duration_ms = elapsed.as_millis(),
-    "operation completed"
+    "transfer completed"
 );
 
-// ❌ WRONG - camelCase field names
-tracing::info!(
-    jobId = %job_id,
-    workerNodeId = %worker_id,
-    datasetName = %dataset_name,
-    "operation completed"
-);
-
-// ❌ WRONG - Inconsistent naming
-tracing::info!(job = %job_id, "job started");
-tracing::info!(job_id = %job_id, "job completed"); // Use job_id consistently
-
-// ❌ WRONG - Abbreviated names
-tracing::info!(ds = %dataset_name, wrk = %worker_id, "processing");
+// ❌ Bad — camelCase, abbreviations, and a name that drifts between call sites all break the one filter
+// someone writes to follow a transfer through the log
+tracing::info!(consoleAddr = %console_addr, fileName = %file_name, "transfer completed");
+tracing::info!(addr = %console_addr, fname = %file_name, "sending");
+tracing::info!(file = %file_name, "transfer started");
+tracing::info!(file_name = %file_name, "transfer completed");
 ```
 
-**Standard Field Names:**
+**Standard field names:**
 
-| Resource          | Field Name          | Example                                                  |
-| ----------------- | ------------------- | -------------------------------------------------------- |
-| Job ID            | `job_id`            | `job_id = %job_id`                                       |
-| Worker Node ID    | `node_id`           | `node_id = %node_id`                                     |
-| Dataset Namespace | `dataset_namespace` | `dataset_namespace = %namespace`                         |
-| Dataset Name      | `dataset_name`      | `dataset_name = %dataset_name`                           |
-| Dataset Revision  | `dataset_revision`  | `dataset_revision = %revision`                           |
-| Dataset Reference | `dataset_reference` | `dataset_reference = %reference`                         |
-| Block Number      | `block_number`      | `block_number = block_num`                               |
-| Duration          | `duration_ms`       | `duration_ms = elapsed.as_millis()`                      |
-| Retry Attempt     | `retry_attempt`     | `retry_attempt = 3`                                      |
-| Error             | `error`             | `error = %err` (MANDATORY format)                        |
-| Error Source      | `error_source`      | `error_source = logging::error_source(&err)` (MANDATORY) |
+| Resource         | Field Name      | Example                                                  |
+| ---------------- | --------------- | -------------------------------------------------------- |
+| Console address  | `console_addr`  | `console_addr = %console_addr`                           |
+| Transferred file | `file_name`     | `file_name = %file_name`                                 |
+| File length      | `file_length`   | `file_length = file_length`                              |
+| Target triple    | `target`        | `target = %target`                                       |
+| Output format    | `format`        | `format = %format`                                       |
+| RomFS entry path | `entry_path`    | `entry_path = %entry_path`                               |
+| Segment index    | `segment_index` | `segment_index = idx`                                    |
+| Duration         | `duration_ms`   | `duration_ms = elapsed.as_millis()`                      |
+| Retry attempt    | `retry_attempt` | `retry_attempt = 3`                                      |
+| Error            | `error`         | `error = %err` (MANDATORY format)                        |
+| Error Source     | `error_source`  | `error_source = logging::error_source(&err)` (MANDATORY) |
 
-## FIELD FORMATTING
+## Field Formatting
 
 ### 1. Display Formatting (`%`)
 
-**USE** `%` prefix for human-readable string representation (implements `Display` trait).
+Use `%` for values with a human-readable `Display` representation: identifiers, names, enums, and the
+top-level error message.
 
 ```rust
-// ✅ CORRECT - Display formatting for readable values
-tracing::info!(
-    job_id = %job_id,              // JobId implements Display
-    dataset_name = %dataset_name,   // String-like types
-    error = %err,                   // Top-level error message
-    status = %job_status,           // Enum with Display
-    "job state changed"
-);
+// ✅ Good — Display renders the value as a reader reads it
+tracing::info!(console_addr = %console_addr, file_name = %file_name, format = %format, "bundle packed");
 
-// ❌ WRONG - Using Debug when Display is available
-tracing::info!(job_id = ?job_id, "job started");
+// ❌ Bad — Debug on a type that has Display logs `EntryPath("...")` instead of the path
+tracing::info!(entry_path = ?entry_path, "asset added");
 ```
 
 ### 2. Debug Formatting (`?`)
 
-**USE** `?` prefix for Debug representation (implements `Debug` trait). Useful for complex types, collections, and error source chains.
+Use `?` for complex types, collections, and error source chains. Primitive numeric types take no prefix.
 
 ```rust
-// ✅ CORRECT - Debug formatting for complex types
+// ✅ Good — `?` for structured values, no prefix for numbers
 tracing::debug!(
-    config = ?config,                           // Complex struct
-    error_source = logging::error_source(&err), // Returns DebugValue<Vec<String>>
-    headers = ?request_headers,                 // HashMap
-    "request processed"
-);
-
-// ✅ CORRECT - No prefix for primitive types
-tracing::info!(
-    retry_attempt = 3,           // i32/u32/usize - no prefix
-    duration_ms = elapsed.as_millis(), // u128 - no prefix
-    row_count = rows.len(),      // usize - no prefix
-    "operation completed"
+    spec = ?npdm_spec,
+    segments = ?segment_bounds,
+    error_source = logging::error_source(&err), // returns DebugValue<Vec<String>>
+    retry_attempt = 3,
+    duration_ms = elapsed.as_millis(),
+    entry_count = entries.len(),
+    "image assembled"
 );
 ```
 
 ### 3. Avoid Redundant Context
 
-**DO NOT** log the same field multiple times in nested spans or repeated log statements.
+Set shared context once on the span. Do not repeat a field the enclosing span already carries.
 
 ```rust
-// ✅ CORRECT - Set context once in span
-#[tracing::instrument(skip_all, fields(job_id = %job_id))]
-pub async fn process_job(job_id: JobId) -> Result<(), Error> {
-    tracing::info!("job started");  // job_id already in span
+// ✅ Good — console_addr enters every event through the span, so each line stays about what happened
+#[tracing::instrument(skip_all, fields(console_addr = %console_addr))]
+pub async fn send_nro(console_addr: SocketAddr, nro: &[u8]) -> Result<(), SendNroError> {
+    tracing::info!("transfer started");
 
-    match execute_job().await {
-        Ok(_) => tracing::info!("job completed"),  // job_id already in span
-        Err(err) => {
-            tracing::error!(
-                error = %err,
-                error_source = logging::error_source(&err),
-                "job execution failed"
-            );
-        }
+    match transfer(console_addr, nro).await {
+        Ok(()) => tracing::info!("transfer completed"),
+        Err(err) => tracing::error!(
+            error = %err,
+            error_source = logging::error_source(&err),
+            "transfer failed"
+        ),
     }
 
     Ok(())
 }
 
-// ❌ WRONG - Repeating job_id in every log
-pub async fn process_job(job_id: JobId) -> Result<(), Error> {
-    tracing::info!(job_id = %job_id, "job started");
-
-    match execute_job().await {
-        Ok(_) => tracing::info!(job_id = %job_id, "job completed"),
-        Err(err) => {
-            tracing::error!(
-                job_id = %job_id,  // Redundant if in span
-                error = %err,
-                error_source = logging::error_source(&err),
-                "job execution failed"
-            );
-        }
-    }
-
-    Ok(())
+// ❌ Bad — console_addr is duplicated on every event under the span, doubling the payload and inviting
+// the two copies to disagree
+#[tracing::instrument(skip_all, fields(console_addr = %console_addr))]
+pub async fn send_nro(console_addr: SocketAddr, nro: &[u8]) -> Result<(), SendNroError> {
+    tracing::info!(console_addr = %console_addr, "transfer started");
+    // ...
 }
 ```
 
-## LOG LEVEL GUIDELINES
+## Log Level Rules
 
 ### 1. Error Level
 
-**USE** `tracing::error!` for unrecoverable failures, data loss risks, and critical system issues.
-
-**When to use:**
-
-- Database connection failures (after retries exhausted)
-- Data corruption detected
-- Critical resource unavailable
-- Unexpected errors that require immediate attention
-- System integrity compromised
+`tracing::error!` is for unrecoverable failures, corrupted output, and anything that leaves the user without
+the artifact they asked for: an image that failed to assemble, a transfer abandoned mid-write, an unexpected
+error the run cannot continue past.
 
 ```rust
-// ✅ CORRECT - Error level usage
+// ✅ Good — a failure the user must act on
 tracing::error!(
+    console_addr = %console_addr,
     error = %err,
     error_source = logging::error_source(&err),
-    "database connection failed after retries"
+    "transfer abandoned mid-write"
 );
 
-tracing::error!(
-    job_id = %job_id,
-    error = %err,
-    error_source = logging::error_source(&err),
-    "data corruption detected"
-);
-
-tracing::error!(
-    manifest_hash = %hash,
-    "manifest validation failed"
-);
-
-// ❌ WRONG - Not error-level events
-tracing::error!("worker_started");  // Should be info
-tracing::error!(retry_attempt = 1, "retrying connection");  // Should be warn
+// ❌ Bad — routine events at error level train a reader to ignore the level that matters
+tracing::error!("netloader client started");
+tracing::error!(retry_attempt = 1, "retrying discovery");
 ```
 
 ### 2. Warn Level
 
-**USE** `tracing::warn!` for recoverable failures, degraded performance, and retry attempts.
+`tracing::warn!` is for recoverable failures and degraded operation: performance degradation, resource limits
+approaching, deprecated functionality in use.
 
-**When to use:**
-
-- Transient failures that will be retried
-- Performance degradation detected
-- Resource limits approaching
-- Expected errors during retries
-- Deprecated functionality usage
+A retry that is still within its budget is a `warn`: it reports degraded-but-self-correcting behavior, and it
+carries `retry_attempt` so the trend is visible. The attempt that exhausts the budget is the error.
 
 ```rust
-// ✅ CORRECT - Warn level usage
+// ✅ Good — degraded but self-correcting, and the fields show the trend
+tracing::warn!(retry_attempt = attempt, "discovery ping went unanswered");
 tracing::warn!(
-    node_id = %node_id,
-    retry_attempt = 3,
-    error = %err,
-    error_source = logging::error_source(&err),
-    "connection retry scheduled after backoff"
-);
-
-tracing::warn!(
-    memory_usage_percent = 85,
-    "memory usage approaching limit"
-);
-
-tracing::warn!(
-    job_id = %job_id,
+    file_length = file_length,
     duration_ms = elapsed.as_millis(),
-    "job execution time exceeded threshold"
+    "transfer slower than expected"
 );
 
-// ❌ WRONG - Not warning-level events
-tracing::warn!("job completed");  // Should be info
-tracing::warn!("starting_database_query");  // Should be debug
+// ❌ Bad — a success and a routine step at warn level bury the degradations worth reading
+tracing::warn!("transfer completed");
+tracing::warn!("starting romfs scan");
 ```
 
 ### 3. Info Level
 
-**USE** `tracing::info!` for important state changes, successful operations, and lifecycle events.
-
-**When to use:**
-
-- Service startup/shutdown
-- Worker registration/deregistration
-- Job lifecycle events (started, completed)
-- Dataset operations (registered, deployed)
-- Important configuration changes
+`tracing::info!` is for important state changes and lifecycle events: a console discovered, a transfer
+started and completed, a bundle written, a build finished.
 
 ```rust
-// ✅ CORRECT - Info level usage
+// ✅ Good — a lifecycle event worth one line at the default level
 tracing::info!(
-    node_id = %node_id,
-    worker_type = "dump",
-    "worker registered"
-);
-
-tracing::info!(
-    job_id = %job_id,
-    dataset_name = %dataset_name,
+    console_addr = %console_addr,
+    file_name = %file_name,
     duration_ms = elapsed.as_millis(),
-    "job completed"
+    "transfer completed"
 );
 
-tracing::info!(
-    dataset_name = %dataset_name,
-    version = %version,
-    "dataset deployed"
-);
-
-// ❌ WRONG - Too verbose for info level
-tracing::info!(batch_size = 100, "processing batch");  // Should be debug
-tracing::info!("checking database connection");  // Should be debug
+// ❌ Bad — per-chunk and per-step detail at info level floods the default stream
+tracing::info!(chunk_len = 0x4000, "sending chunk");
+tracing::info!("checking output directory");
 ```
 
 ### 4. Debug Level
 
-**USE** `tracing::debug!` for detailed execution flow, expected errors, and diagnostic information.
-
-**When to use:**
-
-- Detailed operational flow
-- Database query execution
-- Expected error conditions during normal operation
-- Intermediate processing steps
-- Resource allocation/deallocation
+`tracing::debug!` is for detailed execution flow and diagnostics: each discovery attempt, intermediate
+packaging steps, expected error conditions during normal operation, buffer sizing.
 
 ```rust
-// ✅ CORRECT - Debug level usage
+// ✅ Good — diagnostic detail, off by default
+tracing::debug!(attempt = attempt, "sending ping message");
 tracing::debug!(
-    query = %sql,
-    params = ?query_params,
-    "executing database query"
+    entry_count = entries.len(),
+    segments = ?segment_bounds,
+    "assembling image"
 );
 
-tracing::debug!(
-    job_id = %job_id,
-    status = %current_status,
-    "checking job status"
-);
-
-tracing::debug!(
-    batch_size = rows.len(),
-    block_range = ?(start_block, end_block),
-    "processing batch"
-);
-
-// ❌ WRONG - Too important for debug level
-tracing::debug!(node_id = %node_id, "worker registered");  // Should be info
-tracing::debug!(error = %err, error_source = logging::error_source(&err), "critical_failure");  // Should be error
+// ❌ Bad — a lifecycle event and a real failure disappear when debug is filtered out
+tracing::debug!(console_addr = %console_addr, "console discovered");
+tracing::debug!(error = %err, error_source = logging::error_source(&err), "transfer failed");
 ```
 
 ### 5. Trace Level
 
-**USE** `tracing::trace!` for extremely verbose debugging. Disabled by default in production.
-
-**When to use:**
-
-- Function entry/exit (when not using `#[tracing::instrument]`)
-- Every iteration in loops
-- Low-level protocol details
-- Memory allocation details
-- Performance profiling data points
+`tracing::trace!` is for extremely verbose debugging, disabled in production: function entry and exit where
+`#[tracing::instrument]` is not used, per-iteration logging, low-level protocol and allocation detail.
 
 ```rust
-// ✅ CORRECT - Trace level usage
-tracing::trace!("entering process batch function");
+// ✅ Good — per-chunk detail nobody runs by default
+tracing::trace!(chunk_index = i, chunk_len = chunk.len(), "compressed chunk sent");
+tracing::trace!(buffer_size = buffer.len(), capacity = buffer.capacity(), "buffer allocated");
 
-tracing::trace!(
-    row_index = i,
-    row_data = ?row,
-    "processing individual row"
-);
-
-tracing::trace!(
-    buffer_size = buffer.len(),
-    capacity = buffer.capacity(),
-    "buffer allocation"
-);
-
-// ❌ WRONG - Too important for trace level
-tracing::trace!(job_id = %job_id, "job completed");  // Should be info
-tracing::trace!(error = %err, error_source = logging::error_source(&err), "database_error");  // Should be error
+// ❌ Bad — anything a user needs is invisible at the level nobody enables
+tracing::trace!(console_addr = %console_addr, "transfer completed");
+tracing::trace!(error = %err, error_source = logging::error_source(&err), "transfer failed");
 ```
 
-## MESSAGE FORMATTING
+## Message Formatting
 
 ### 1. Descriptive Messages, Not snake_case
 
-**ALWAYS** use descriptive, human-readable messages. **AVOID** using snake_case, camelCase, or interpolation.
-**Data belongs in fields**, not in the message string.
+Messages are human-readable phrases. Data belongs in fields, never interpolated into the message.
 
 ```rust
-// ✅ CORRECT - Descriptive messages with data in fields
-tracing::info!(worker_id = %id, "worker registered");
-tracing::info!(job_id = %job_id, dataset = %name, "job started for dataset");
-tracing::error!(
-    job_id = %job_id,
-    error = %err,
-    error_source = logging::error_source(&err),
-    "failed to mark job as running"
-);
+// ✅ Good — a phrase a reader understands, with the data beside it
+tracing::info!(console_addr = %console_addr, "console discovered");
+tracing::info!(file_name = %file_name, console_addr = %console_addr, "transfer started");
 
-// ❌ WRONG - snake_case messages
-tracing::info!("worker registered");  // Not descriptive
-tracing::info!("job started");  // Not descriptive
-
-// ❌ WRONG - Data interpolation in message
-tracing::info!("worker {} registered", id);  // Data should be in fields
-tracing::info!(job_id = %job_id, "job {} started", job_id);  // Redundant
+// ❌ Bad — an identifier-shaped message reads as a code symbol, and interpolated data cannot be filtered
+tracing::info!(console_addr = %console_addr, "console_discovered");
+tracing::info!("console {} discovered", console_addr);
 ```
 
 ### 2. Brief and Clear
 
-**USE** concise, descriptive messages that explain what happened. **AVOID** verbose sentences.
+Messages are concise. Avoid full sentences and narration.
 
 ```rust
-// ✅ CORRECT - Brief and clear
-tracing::info!(worker_id = %id, "worker registered");
-tracing::info!(job_id = %job_id, rows = count, "job completed");
-tracing::error!(
-    error = %err,
-    error_source = logging::error_source(&err),
-    "database connection failed"
-);
+// ✅ Good — says what happened in as few words as carry it
+tracing::info!(file_name = %file_name, file_length = len, "transfer completed");
 
-// ❌ WRONG - Too verbose
-tracing::info!(worker_id = %id, "The worker has been successfully registered in the system");
-tracing::info!(job_id = %job_id, "Job processing has now completed");
+// ❌ Bad — a sentence costs bytes on every event and says nothing the fields do not
+tracing::info!(file_name = %file_name, "The file transfer has now completed");
 ```
 
 ### 3. Action-Oriented Past Tense
 
-**USE** past tense verbs describing what happened. **AVOID** present progressive or editorial comments.
+Use past-tense verbs describing what happened. No present progressive, no editorial.
 
 ```rust
-// ✅ CORRECT - Past tense actions
-tracing::info!(worker_id = %id, "worker registered");
-tracing::info!(job_id = %job_id, "job completed");
-tracing::info!(dataset = %name, "dataset deployed");
-tracing::warn!(retry = attempt, "connection retry scheduled");
+// ✅ Good — the event already happened when the line is written
+tracing::info!(console_addr = %console_addr, "console discovered");
+tracing::info!(file_name = %file_name, "nro deployed");
+tracing::warn!(retry_attempt = attempt, "discovery retry scheduled");
 
-// ❌ WRONG - Present progressive
-tracing::info!(worker_id = %id, "registering worker");
-tracing::info!(job_id = %job_id, "completing job");
-
-// ❌ WRONG - Editorial comments
-tracing::info!(dataset = %name, "successfully deployed dataset");
+// ❌ Bad — progressive tense claims work that may never finish, and editorial adds no signal
+tracing::info!(console_addr = %console_addr, "discovering console");
+tracing::info!(file_name = %file_name, "successfully deployed nro");
 tracing::error!(error = %err, error_source = logging::error_source(&err), "oh no connection problem");
 ```
 
 ### 4. No Punctuation
 
-**NEVER** include punctuation (periods, exclamation marks, question marks) in log messages.
+Never end a message with a period, exclamation mark, or question mark.
 
 ```rust
-// ✅ CORRECT - No punctuation
-tracing::info!(worker_id = %id, "worker registered");
-tracing::error!(
-    error = %err,
-    error_source = logging::error_source(&err),
-    "database connection failed"
-);
+// ✅ Good — no trailing punctuation
+tracing::info!(console_addr = %console_addr, "console discovered");
 
-// ❌ WRONG - Includes punctuation
-tracing::info!(worker_id = %id, "worker registered.");
-tracing::error!(error = %err, error_source = logging::error_source(&err), "connection failed!");
-tracing::warn!(retry = 3, "retrying connection?");
+// ❌ Bad — punctuation varies per author and breaks grouping on the message string
+tracing::info!(console_addr = %console_addr, "console discovered.");
+tracing::error!(error = %err, error_source = logging::error_source(&err), "transfer failed!");
+tracing::warn!(retry_attempt = 3, "retrying discovery?");
 ```
 
-## COMPLETE EXAMPLES
-
-### Example 1: Info Level for Lifecycle Events
-
-**Context**: Logging successful operations and state changes
-
-```rust
-// ✅ CORRECT - Info for important events
-tracing::info!(
-    job_id = %job_id,
-    rows_processed = result.row_count,
-    duration_ms = result.duration.as_millis(),
-    "job completed successfully"
-);
-```
-
-### Example 2: Debug Level for Operational Details
-
-**Context**: Detailed execution flow logging
-
-```rust
-// ✅ CORRECT - Debug for detailed flow
-tracing::debug!(
-    table_name = %table_name,
-    batch_count,
-    row_count,
-    total_rows,
-    "processing batch"
-);
-```
-
-### Example 3: Instrumentation with Span Context
-
-**Context**: Using tracing::instrument to avoid field repetition
-
-```rust
-// ✅ CORRECT - Context set in span, not repeated in logs
-#[tracing::instrument(skip(self), fields(node_id = %self.node_id, job_id = %job_id))]
-pub async fn process_job(&self, job_id: JobId) -> Result<(), Error> {
-    tracing::info!("job processing started");  // job_id already in span
-    // ... execute job ...
-    tracing::info!("job completed");  // job_id already in span
-    Ok(())
-}
-```
-
-## CHECKLIST
+## Checklist
 
 Before committing code with logging, verify:
 
-### Core Principles
-
 - [ ] All logging uses fully qualified `tracing::<macro>!()` form
 - [ ] Instrument attribute uses fully qualified `#[tracing::instrument]` form
-- [ ] No use of `println!`, `eprintln!`, or `log` crate
-- [ ] All logs use structured field-based logging
-- [ ] Avoid string interpolation in log messages
+- [ ] No use of `println!`, `eprintln!`, or `log` crate; user-facing output goes through the `ui` module
+- [ ] All logs use structured field-based logging, with no string interpolation in messages
 - [ ] Appropriate log level used (error/warn/info/debug/trace)
 - [ ] Multiline format used for calls exceeding 100 characters or with 3+ fields
 - [ ] Message string is the last parameter (after all fields)
-
-### Field Formatting
-
 - [ ] Display formatting (`%`) used for human-readable values
 - [ ] Debug formatting (`?`) used for complex types and collections
 - [ ] No prefix for primitive numeric types
 - [ ] `logging::error_source()` returns `DebugValue<Vec<String>>`
-
-### Field Naming
-
 - [ ] All field names use `snake_case`
-- [ ] Consistent field names used (e.g., `job_id`, not `job` or `id`)
-- [ ] Standard field names followed (see table in Core Principles #5)
+- [ ] Consistent field names used (e.g., `console_addr`, not `addr` or `console`)
+- [ ] Standard field names followed (see the taxonomy table)
 - [ ] No abbreviated field names
-
-### Message Formatting
-
 - [ ] Messages are descriptive and human-readable (not snake_case)
 - [ ] Data is in fields, not interpolated in messages
-- [ ] Messages are brief and action-oriented
-- [ ] Past tense verbs used
-- [ ] No punctuation in messages
-- [ ] No editorial comments or vague descriptions
-
-### Context and Spans
-
+- [ ] Messages are brief and action-oriented, in past tense
+- [ ] No punctuation, editorial comments, or vague descriptions in messages
 - [ ] Relevant context included in all error logs
 - [ ] `#[tracing::instrument]` used for important functions
 - [ ] Redundant context avoided in nested spans

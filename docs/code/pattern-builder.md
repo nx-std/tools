@@ -11,110 +11,89 @@ scope: "global"
 
 ## Rule
 
-Use the builder pattern when construction has multiple required fields. The built type should contain no `Option` fields for data that must always be present — the builder holds the optionality, and `build()` enforces completeness.
-
-If a struct exposes required data as `Option` fields because "they're set during construction," the type leaks its construction concerns into every consumer. Consumers should never need to unwrap fields that are guaranteed to exist.
+Use the builder pattern when construction has multiple required fields. The built type carries no `Option` fields for data that must always be present: the builder holds the optionality, and `build()` enforces completeness. A struct that exposes required data as `Option` because "it is set during construction" leaks its construction concerns into every consumer, and consumers must never unwrap fields that are guaranteed to exist.
 
 ## Examples
 
 ```rust
-// Bad — easy to forget required fields, consumers deal with Option
-pub struct Config {
-    pub database_url: Option<String>,
-    pub port: Option<u16>,
-}
+// ❌ Bad — easy to forget required fields, consumers deal with Option
+pub struct NacpSpec { pub title: Option<AppTitle>, pub author: Option<Author> }
 
 // Every consumer must unwrap or check fields that should always exist
-fn connect(config: &Config) {
-    let url = config.database_url.as_ref().expect("missing url"); // runtime panic risk
+fn write_control(spec: &NacpSpec) {
+    let title = spec.title.as_ref().expect("missing title"); // runtime panic risk
 }
 ```
 
 ```rust
-// Good — builder enforces completeness, built type has no Option for required fields
-pub struct Config {
-    database_url: String,  // No Option — guaranteed to exist
-    port: u16,
-}
+// ✅ Good — builder enforces completeness, built type has no Option for required fields
+pub struct NacpSpec { title: AppTitle, author: Author } // No Option — guaranteed to exist
 
-pub struct ConfigBuilder {
-    database_url: Option<String>,
-    port: Option<u16>,
-}
+pub struct NacpBuilder { title: Option<AppTitle>, author: Option<Author> }
 
-impl ConfigBuilder {
+impl NacpBuilder {
     pub fn new() -> Self {
-        Self { database_url: None, port: None }
+        Self { title: None, author: None }
     }
 
-    pub fn database_url(mut self, url: String) -> Self {
-        self.database_url = Some(url);
+    pub fn title(mut self, title: AppTitle) -> Self {
+        self.title = Some(title);
         self
     }
 
-    pub fn port(mut self, port: u16) -> Self {
-        self.port = Some(port);
+    pub fn author(mut self, author: Author) -> Self {
+        self.author = Some(author);
         self
     }
 
-    pub fn build(self) -> Result<Config, BuildError> {
-        Ok(Config {
-            database_url: self.database_url.ok_or(BuildError::MissingDatabaseUrl)?,
-            port: self.port.ok_or(BuildError::MissingPort)?,
+    // Yields a NacpSpec whose title is AppTitle, not Option<AppTitle> — no unwrapping downstream
+    pub fn build(self) -> Result<NacpSpec, BuildError> {
+        Ok(NacpSpec {
+            title: self.title.ok_or(BuildError::MissingTitle)?,
+            author: self.author.ok_or(BuildError::MissingAuthor)?,
         })
     }
 }
-
-// config.database_url is String, not Option<String> — no unwrapping needed
 ```
 
 ```rust
-// Good — type-state builder enforces required fields at compile time
-pub struct ConfigBuilder<Url, Port> {
-    database_url: Url,
-    port: Port,
-}
-
+// ✅ Good — type-state builder enforces required fields at compile time
 pub struct Missing;
 pub struct Set<T>(T);
 
-impl ConfigBuilder<Missing, Missing> {
-    pub fn new() -> Self {
-        Self { database_url: Missing, port: Missing }
+pub struct NacpBuilder<Title, Author> { title: Title, author: Author }
+
+impl NacpBuilder<Missing, Missing> {
+    pub fn new() -> Self { Self { title: Missing, author: Missing } }
+}
+
+impl<A> NacpBuilder<Missing, A> {
+    pub fn title(self, title: AppTitle) -> NacpBuilder<Set<AppTitle>, A> {
+        NacpBuilder { title: Set(title), author: self.author }
     }
 }
 
-impl<Port> ConfigBuilder<Missing, Port> {
-    pub fn database_url(self, url: String) -> ConfigBuilder<Set<String>, Port> {
-        ConfigBuilder { database_url: Set(url), port: self.port }
+impl<T> NacpBuilder<T, Missing> {
+    pub fn author(self, author: Author) -> NacpBuilder<T, Set<Author>> {
+        NacpBuilder { title: self.title, author: Set(author) }
     }
 }
 
-impl<Url> ConfigBuilder<Url, Missing> {
-    pub fn port(self, port: u16) -> ConfigBuilder<Url, Set<u16>> {
-        ConfigBuilder { database_url: self.database_url, port: Set(port) }
+// build() exists only once every required field is set — compile-time enforcement
+impl NacpBuilder<Set<AppTitle>, Set<Author>> {
+    pub fn build(self) -> NacpSpec {
+        NacpSpec { title: self.title.0, author: self.author.0 }
     }
 }
-
-impl ConfigBuilder<Set<String>, Set<u16>> {
-    pub fn build(self) -> Config {
-        Config {
-            database_url: self.database_url.0,
-            port: self.port.0,
-        }
-    }
-}
-
-// build() only available when all required fields are set — compile-time enforcement
 ```
 
 ## Why It Matters
 
-When required data is represented as `Option` fields, every consumer must handle the `None` case for data that should never be absent. The builder pattern isolates construction complexity in one place and produces a type that unconditionally guarantees all required fields exist. This eliminates an entire class of runtime panics from unwrapping "always-present" optional fields.
+Required data represented as `Option` forces every consumer to handle a `None` that should never occur. The builder isolates construction complexity in one place and produces a type that unconditionally guarantees its required fields, removing an entire class of runtime panics from unwrapping "always-present" fields.
 
 ## Pragmatism Caveat
 
-Not every struct needs a builder. If a struct has 2-3 fields that are all required and always available at construction time, a simple `new()` constructor is clearer. Use the builder pattern when construction is genuinely complex: many fields, a mix of required and optional, or when the construction order matters. A type-state builder (compile-time enforcement) is ideal when misuse would be a serious bug; a runtime `build() -> Result` is fine for configuration-style objects where a clear error message suffices.
+Not every struct needs a builder. A struct with 2-3 required fields all available at construction time is clearer with a plain `new()`. Use a builder when construction is genuinely complex: many fields, a mix of required and optional, or an order that matters. Prefer a type-state builder when misuse would be a serious bug; a runtime `build() -> Result` is fine for configuration-style objects where a clear error message suffices.
 
 ## Checklist
 

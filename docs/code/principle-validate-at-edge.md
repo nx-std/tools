@@ -1,6 +1,6 @@
 ---
 name: "principle-validate-at-edge"
-description: "Validate at the Edge — enforce input correctness at system boundaries. Load when designing API handlers, parsing external input, or deciding where to place validation logic"
+description: "Validate at the Edge (hard shell, soft core) — parse untrusted input once at the boundary. Load when designing CLI commands, parsing manifests or arguments, or decoding an executable image"
 type: "principle"
 scope: "global"
 ---
@@ -11,328 +11,247 @@ scope: "global"
 
 ## Rule
 
-Validate all external input at the system's entry points — API handlers, CLI parsers, message consumers, deserialization boundaries. Once data crosses the edge and is accepted, the domain trusts it completely. Domain logic should never re-validate what the boundary already guaranteed.
+Every value that enters from outside — a CLI argument, a project manifest, an NPDM descriptor, an environment
+variable, a linked ELF, an NRO built by someone else, bytes arriving over the netloader socket — arrives
+untrusted and typed wider than reality. Parse it **once**, at the boundary, into a type the rest of the code can trust. Past that point, no
+function re-checks. The boundary is the hard shell; the domain is the soft core. Concretely:
 
-The boundary is the hard shell: it rejects malformed, out-of-range, or structurally invalid data before it reaches domain code. The domain is the soft core: it operates on validated types without defensive checks, focusing purely on business rules.
-
-The examples below use newtypes and validated wrappers from [Type-Driven Design](principle-type-driven-design.md) to represent parsed data — edge validation produces the types, that pattern defines how to design them.
+- Parsing lives in `FromStr` or `TryFrom`, not in a standalone `parse` function and not in the handler body.
+  That is the one place a newtype's invariant is established, and it is what clap's `value_parser`, serde's
+  `try_from`, and `?` all compose with.
+- A command's job is to turn arguments and manifests into domain types and hand them on. Domain functions
+  take the parsed types, never the raw argument.
+- Malformed input degrades into a typed error at the edge — a rejected argument, a refused deploy, a skipped
+  asset with a reported reason — never a panic three layers down in the packer.
+- Unit and convention conversions happen once, at the boundary: hex string to bytes, exclusive end to
+  inclusive, seconds to `Duration`.
 
 ## Examples
 
-1. **Newtypes at the API boundary**
-Domain functions should receive validated types, not raw strings that require parsing inside business logic.
+1. **Parse into domain types at the boundary; the domain trusts them**
+   A command receives strings. Everything past it receives meaning.
 
 ```rust
-// Bad — domain function validates raw input deep inside business logic
-fn calculate_discount(price_str: &str, percentage_str: &str) -> Result<f64> {
-    // Parsing and validation buried in domain logic
-    let price: f64 = price_str.parse()
-        .map_err(|_| anyhow!("invalid price"))?;
-    if price < 0.0 {
-        return Err(anyhow!("price must be non-negative"));
+// ❌ Bad — the domain function takes raw strings and validates them itself. Every other
+// caller must remember to do the same, and the one that forgot packed an image whose
+// entries all sat under an empty path, because an empty string parsed to a default.
+fn add_asset(entry: &str, source: &str, out: &mut RomFsBuilder) -> Result<(), AddError> {
+    if entry.is_empty() {
+        return Err(AddError::MissingEntryPath);
     }
-    let percentage: f64 = percentage_str.parse()
-        .map_err(|_| anyhow!("invalid percentage"))?;
-    if !(0.0..=100.0).contains(&percentage) {
-        return Err(anyhow!("percentage must be 0-100"));
+    if entry.starts_with('/') {
+        return Err(AddError::AbsoluteEntryPath);
     }
-    Ok(price * (1.0 - percentage / 100.0))
+    let source = PathBuf::from(source);
+    if !source.is_file() {
+        return Err(AddError::NotAFile);
+    }
+    // ...domain logic, finally
 }
 ```
 
 ```rust
-// Good — boundary validates and parses, domain receives validated types
-struct Price(f64);
+// ✅ Good — the invariants live in FromStr; the command parses; the domain trusts.
+// Every path into the domain goes through the same types, including the bundle command.
+impl std::str::FromStr for EntryPath {
+    type Err = ParseEntryPathError;
 
-impl Price {
-    fn parse(input: &str) -> Result<Self> {
-        let value: f64 = input.parse()?;
-        if value < 0.0 {
-            return Err(anyhow!("price must be non-negative"));
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        if input.is_empty() {
+            return Err(ParseEntryPathError::Empty);
         }
-        Ok(Self(value))
-    }
-
-    fn value(&self) -> f64 {
-        self.0
-    }
-}
-
-struct Percentage(f64);
-
-impl Percentage {
-    fn parse(input: &str) -> Result<Self> {
-        let value: f64 = input.parse()?;
-        if !(0.0..=100.0).contains(&value) {
-            return Err(anyhow!("percentage must be 0-100"));
+        if input.starts_with('/') {
+            return Err(ParseEntryPathError::Absolute);
         }
-        Ok(Self(value))
-    }
-
-    fn as_factor(&self) -> f64 {
-        self.0 / 100.0
-    }
-}
-
-// Boundary: API handler validates input
-async fn handle_discount(req: DiscountRequest) -> Result<Json<f64>> {
-    let price = Price::parse(&req.price)?;
-    let percentage = Percentage::parse(&req.percentage)?;
-    Ok(Json(calculate_discount(price, percentage)))
-}
-
-// Domain: operates on validated types, no defensive checks
-fn calculate_discount(price: Price, percentage: Percentage) -> f64 {
-    price.value() * (1.0 - percentage.as_factor())
-}
-```
-
-2. **Single validation point eliminates scattered checks**
-When validation is spread across handler, service, and repository layers, it's unclear which layer is responsible.
-
-```rust
-// Bad — validation scattered across multiple layers
-async fn handle_create_user(req: Json<CreateUserRequest>) -> Result<()> {
-    // Handler checks some fields
-    if req.email.is_empty() {
-        return Err(anyhow!("email required"));
-    }
-    // Service checks others
-    user_service.create(&req.name, &req.email).await
-}
-
-async fn create(name: &str, email: &str) -> Result<()> {
-    // Service re-validates and checks more
-    if !email.contains('@') {
-        return Err(anyhow!("invalid email"));
-    }
-    if name.len() > 100 {
-        return Err(anyhow!("name too long"));
-    }
-    repo.insert(name, email).await
-}
-
-async fn insert(name: &str, email: &str) -> Result<()> {
-    // Repository checks even more
-    if name.is_empty() {
-        return Err(anyhow!("name required"));
-    }
-    // finally does the insert
-    Ok(())
-}
-```
-
-```rust
-// Good — all validation at the boundary, domain receives fully validated types
-struct UserName(String);
-
-impl UserName {
-    fn parse(input: &str) -> Result<Self> {
-        let trimmed = input.trim();
-        if trimmed.is_empty() {
-            return Err(anyhow!("name required"));
+        if input.split('/').any(|component| component == "..") {
+            return Err(ParseEntryPathError::ParentComponent);
         }
-        if trimmed.len() > 100 {
-            return Err(anyhow!("name too long"));
-        }
-        Ok(Self(trimmed.to_owned()))
-    }
-}
-
-struct Email(String);
-
-impl Email {
-    fn parse(input: &str) -> Result<Self> {
-        let trimmed = input.trim();
-        if trimmed.is_empty() {
-            return Err(anyhow!("email required"));
-        }
-        if !trimmed.contains('@') {
-            return Err(anyhow!("invalid email"));
-        }
-        Ok(Self(trimmed.to_owned()))
-    }
-}
-
-// Boundary: single validation point
-async fn handle_create_user(req: Json<CreateUserRequest>) -> Result<()> {
-    let name = UserName::parse(&req.name)?;
-    let email = Email::parse(&req.email)?;
-    user_service.create(name, email).await
-}
-
-// Domain: trusts validated types completely
-async fn create(name: UserName, email: Email) -> Result<()> {
-    repo.insert(name, email).await
-}
-```
-
-3. **Cross-field constraints at the boundary**
-When multiple fields have relationships (date ranges, mutual requirements), validate the relationship at the edge alongside individual field validation.
-
-```rust
-// Bad — cross-field check buried in domain logic
-fn schedule_report(start: &str, end: &str) -> Result<()> {
-    let start: NaiveDate = start.parse()?;
-    let end: NaiveDate = end.parse()?;
-    if start >= end {
-        return Err(anyhow!("start must be before end"));
-    }
-    generate_report(start, end)
-}
-```
-
-```rust
-// Good — cross-field constraint validated at the edge via a composite type
-struct DateRange {
-    start: NaiveDate,
-    end: NaiveDate,
-}
-
-impl DateRange {
-    fn parse(start: &str, end: &str) -> Result<Self> {
-        let start: NaiveDate = start.parse()?;
-        let end: NaiveDate = end.parse()?;
-        if start >= end {
-            return Err(anyhow!("start must be before end"));
-        }
-        Ok(Self { start, end })
+        Ok(Self(input.to_owned()))
     }
 }
 
 // Boundary
-async fn handle_schedule(req: ScheduleRequest) -> Result<()> {
-    let range = DateRange::parse(&req.start, &req.end)?;
-    report_service.generate(range).await
+fn run_add(args: AddArgs, out: &mut RomFsBuilder) -> Result<(), Error> {
+    let entry = args.entry.parse().map_err(Error::from)?;
+    let source = SourcePath::try_from(args.source).map_err(Error::from)?;
+    add_asset(entry, source, out).map_err(Error::from)
 }
 
-// Domain: trusts the range is valid
-fn generate(range: DateRange) -> Result<Report> {
-    // no defensive checks needed
-}
+// Domain — no defensive checks; the types carry the proof
+fn add_asset(entry: EntryPath, source: SourcePath, out: &mut RomFsBuilder) -> Result<(), AddError> {}
 ```
 
-4. **CLI boundary parsing**
-CLI arguments should be parsed into validated types at the entry point, not deep in domain logic.
+2. **Cross-field constraints belong to a composite type**
+   A relationship between two fields is an invariant of the pair, so the pair is the type.
 
 ```rust
-// Bad — CLI tool validates arguments deep in domain logic
-fn run_indexer(args: &[String]) -> Result<()> {
-    let batch_size: usize = args[1].parse()
-        .map_err(|_| anyhow!("invalid batch size"))?;
-    if batch_size == 0 || batch_size > 10_000 {
-        return Err(anyhow!("batch size must be 1-10000"));
+// ❌ Bad — the ordering check sits in the one function that happened to need it,
+// and the exclusive/inclusive convention is re-decided at every call site.
+fn copy_segment(offset: FileOffset, end: FileOffset, out: &mut Vec<u8>) -> Result<(), CopyError> {
+    if offset > end {
+        return Err(CopyError::InvertedBounds);
     }
-    let rpc_url = &args[2];
-    if !rpc_url.starts_with("http") {
-        return Err(anyhow!("invalid RPC URL"));
-    }
-    // domain logic mixed with input parsing
-    index_blocks(rpc_url, batch_size).await
+    // is `end` inclusive here? the caller two modules up assumed it was not
 }
 ```
 
 ```rust
-// Good — CLI boundary parses into validated types before entering domain
-struct BatchSize(usize);
+// ✅ Good — the pair is a type, the ordering is its invariant, and the convention is
+// stated once and carried in the name.
+/// Half-open segment bounds: `offset` included, `end` excluded.
+pub struct SegmentBounds {
+    offset: FileOffset,
+    end: FileOffset,
+}
 
-impl BatchSize {
-    fn parse(input: &str) -> Result<Self> {
-        let value: usize = input.parse()?;
-        if value == 0 || value > 10_000 {
-            return Err(anyhow!("batch size must be 1-10000"));
+impl TryFrom<(u32, u32)> for SegmentBounds {
+    type Error = ParseSegmentBoundsError;
+
+    fn try_from((offset, end): (u32, u32)) -> Result<Self, Self::Error> {
+        if offset >= end {
+            return Err(ParseSegmentBoundsError::Empty { offset, end });
         }
-        Ok(Self(value))
+        Ok(Self { offset: FileOffset(offset), end: FileOffset(end) })
     }
 }
 
-struct RpcUrl(Url);
-
-impl RpcUrl {
-    fn parse(input: &str) -> Result<Self> {
-        let url: Url = input.parse()?;
-        if !matches!(url.scheme(), "http" | "https") {
-            return Err(anyhow!("RPC URL must use http(s)"));
-        }
-        Ok(Self(url))
-    }
-}
-
-// CLI boundary: all validation here
-fn main() -> Result<()> {
-    let args = cli::parse();
-    let batch_size = BatchSize::parse(&args.batch_size)?;
-    let rpc_url = RpcUrl::parse(&args.rpc_url)?;
-    index_blocks(&rpc_url, batch_size).await
-}
+fn copy_segment(bounds: SegmentBounds, out: &mut Vec<u8>) -> Result<(), CopyError> {}
 ```
 
-5. **Config deserialization boundary**
-Configuration values should be validated once during deserialization, not ad-hoc wherever they're consumed.
+3. **Configuration is deserialized into validated types, once**
+   A config value checked wherever it is consumed is a config value that is eventually consumed somewhere new.
 
 ```rust
-// Bad — config values validated ad-hoc wherever they're used
-fn connect(config: &Config) -> Result<Pool> {
-    if config.db_url.is_empty() {
-        return Err(anyhow!("missing database URL"));
+// ❌ Bad — the raw descriptor is trusted, and every consumer re-checks the parts it uses.
+// The consumer added last did not, and a zero main-thread stack size produced an NPDM
+// the loader rejected, with the failure reported by the console rather than the build.
+#[derive(Deserialize)]
+pub struct NpdmSpec {
+    pub title_id: String,
+    pub main_thread_stack_size: u32,
+}
+
+pub fn build_npdm(spec: &NpdmSpec) -> Result<Vec<u8>, BuildError> {
+    if spec.title_id.is_empty() {
+        return Err(BuildError::MissingTitleId);
     }
-    if config.pool_size == 0 {
-        return Err(anyhow!("pool size must be positive"));
+    if spec.main_thread_stack_size == 0 {
+        return Err(BuildError::BadStackSize);
     }
-    // defensive checks scattered in every consumer of Config
-    Pool::connect(&config.db_url, config.pool_size).await
+    encode_npdm(&spec.title_id, spec.main_thread_stack_size)
 }
 ```
 
 ```rust
-// Good — config deserialization boundary validates once, domain trusts the result
-struct DatabaseConfig {
-    url: DatabaseUrl,
-    pool_size: PoolSize,
+// ✅ Good — deserialization is the boundary. An invalid descriptor fails at load, naming
+// the field and the reason, before a single byte is packed.
+#[derive(Deserialize)]
+pub struct NpdmSpec {
+    pub title_id: TitleId,
+    pub main_thread_stack_size: StackSize,
 }
 
-impl DatabaseConfig {
-    fn from_env() -> Result<Self> {
-        let url = DatabaseUrl::parse(&std::env::var("DATABASE_URL")?)?;
-        let pool_size = PoolSize::parse(&std::env::var("POOL_SIZE")?)?;
-        Ok(Self { url, pool_size })
+#[derive(Deserialize)]
+#[serde(try_from = "u32")]
+pub struct StackSize(NonZeroU32);
+
+impl TryFrom<u32> for StackSize {
+    type Error = ParseStackSizeError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        NonZeroU32::new(value).map(Self).ok_or(ParseStackSizeError::Zero)
     }
 }
 
-// Domain: no defensive checks needed
-fn connect(config: &DatabaseConfig) -> Result<Pool> {
-    Pool::connect(config.url.as_str(), config.pool_size.value()).await
+pub fn build_npdm(spec: &NpdmSpec) -> Result<Vec<u8>, BuildError> {
+    encode_npdm(spec.title_id, spec.main_thread_stack_size.get())
+}
+```
+
+4. **A malformed external image degrades; it does not take the process down**
+   An NRO handed to the tool was built by someone else. It will eventually contain something the format's
+   documentation does not describe.
+
+```rust
+// ❌ Bad — the image is trusted to have the shape the header claims. A segment whose
+// offset plus size runs past the end of the buffer panics on the slice, so the tool
+// aborts with an index-out-of-bounds message naming neither the file nor the segment.
+fn segment_bytes(image: &[u8], header: &NroHeader, index: usize) -> &[u8] {
+    let segment = &header.segments[index];
+    let offset = segment.file_off.get() as usize;
+    &image[offset..offset + segment.size.get() as usize]
+}
+```
+
+```rust
+// ✅ Good — decoding is fallible at the edge, and the failure carries what is needed
+// to act on it: which segment, what bound it broke, how large the image actually is.
+fn segment_bytes(image: &[u8], header: &NroHeader, index: usize) -> Result<&[u8], SegmentError> {
+    let segment = header
+        .segments
+        .get(index)
+        .ok_or(SegmentError::NoSuchSegment { index })?;
+    let offset = segment.file_off.get() as usize;
+    let end = offset
+        .checked_add(segment.size.get() as usize)
+        .ok_or(SegmentError::BoundsOverflow { index })?;
+    image
+        .get(offset..end)
+        .ok_or(SegmentError::OutOfBounds { index, end, available: image.len() })
 }
 ```
 
 ## Why It Matters
 
-Scattered validation clutters domain logic with defensive checks, makes it unclear which layer is responsible for correctness, and risks inconsistent validation (some paths validate, others don't). Edge validation creates a clear contract: the boundary guarantees data integrity, the domain focuses on business rules. When a new API endpoint is added, developers know exactly where validation belongs — at the edge — instead of guessing which layer should check what.
+These tools sit between user-authored manifests, a compiler's output, and binaries built by other toolchains,
+any of which can produce a value the types do not describe: a segment that runs past the end of its file, an
+entry path that escapes the bundle root, a stack size of zero. Trusted where they land, the failure surfaces
+somewhere else entirely — a panic in the packer caused by an argument accepted at startup, or worse, a
+well-formed artifact that only fails on the console.
+
+A single narrow point also localizes the fix. When a format's field changes shape, the one decode site is what
+changes, and a failed decode is a reported, skipped input rather than an aborted build. Because the invariant
+lives in `FromStr`, every entry point that reaches the same domain — the `build` command, the `bundle`
+command, the library API — enforces it identically, for free. Scattered per-layer checks buy the opposite:
+three partial contracts, and the union of them is nobody's job.
 
 ## Pragmatism Caveat
 
-The signal for where validation belongs is whether the check depends only on the incoming request or needs external state:
+The signal for where a check belongs is what it depends on:
 
-- **Request-only checks → edge**: Field formats, required fields, type parsing, and cross-field constraints within the same input (e.g., `start_date < end_date`, "at least one of email or phone required"). These depend solely on the request and belong at the boundary.
-- **Needs external state → domain**: Checks that require database lookups or other service calls (e.g., "does this user have sufficient balance?", "is this item still in stock?"). These belong in the domain because only the domain layer has access to the required state.
+- **Depends only on the incoming value → the edge**: shape, required fields, formats, ranges, and cross-field
+  constraints within one payload.
+- **Depends on external state → the domain**: "does this source file still exist?", "is the console still
+  listening?", "is there space on the device?". These need the world, and the edge does not have it.
 
-Don't try to push state-dependent checks to the boundary, and don't let request-only checks leak into the domain.
+Do not push state-dependent checks into the boundary, and do not let shape checks leak past it. Do not
+re-validate in the soft core: a function taking a parsed type does not check its fields again. An undocumented
+re-validation is dead code that hides where the real contract lives.
 
 ## Checklist
 
 Before committing code, verify:
 
-- [ ] Request-only invariants are enforced at explicit system boundaries before domain execution
-- [ ] Domain interfaces consume validated domain types rather than raw, unparsed input
-- [ ] Validation responsibilities are not duplicated across layers
-- [ ] Checks requiring external state are kept in the domain layer
-- [ ] New entry points establish a clear validation boundary and preserve the same contract
-
+- [ ] Every invariant is established in `FromStr` or `TryFrom`, not in a handler body or a standalone `parse`
+- [ ] Handlers parse the request into domain types; domain functions take the parsed types, never raw input
+- [ ] Cross-field constraints are invariants of a composite type, not checks in one function that needed them
+- [ ] Manifests and CLI input are deserialized into validated types at load; consumers do not re-check
+- [ ] Foreign images are decoded fallibly, with errors naming the field and the context, never `unwrap`
+- [ ] Downstream functions contain zero re-validation of what the boundary guaranteed
+- [ ] Unit and convention conversions (hex to bytes, exclusive to inclusive) happen once, at the boundary
+- [ ] Checks that require external state stay in the domain
 
 ## References
 
-- [principle-type-driven-design](principle-type-driven-design.md) - Related: Edge validation produces the validated types that make illegal states unrepresentable
+- [principle-type-driven-design](principle-type-driven-design.md) - Related: The edge produces the validated
+  types that make illegal states unrepresentable
+- [principle-idempotency](principle-idempotency.md) - Related: The boundary that accepts an input is where the
+  identity of the work it causes is established
+- [principle-least-surprise](principle-least-surprise.md) - Related: A function whose parameter is a parsed type
+  must behave as though it trusts it
 
 ## External References
 
+- [Parse, Don't Validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/)
+- [Using Types To Guarantee Domain Invariants](https://lpalmieri.com/posts/2020-12-11-zero-to-production-6-domain-modelling/)
 - [Architecture Patterns with Python (O'Reilly)](https://www.oreilly.com/library/view/architecture-patterns-with/9781492052197/)
