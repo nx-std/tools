@@ -1,6 +1,6 @@
 ---
 name: "principle-dry-wet"
-description: "DRY and WET balance — when to deduplicate and when duplication is preferable to wrong abstraction. Load when extracting shared code, creating abstractions, or reviewing duplicated logic"
+description: "DRY vs WET — deduplicate knowledge, tolerate coincidental similarity. Load when extracting shared helpers, creating abstractions, or reviewing duplicated-looking code"
 type: "principle"
 scope: "global"
 ---
@@ -11,212 +11,153 @@ scope: "global"
 
 ## Rule
 
-Every piece of **knowledge** must have a single, unambiguous, authoritative representation within the system. Deduplicate when two pieces of code encode the same business rule, invariant, or decision. Do **not** deduplicate when two pieces of code merely look similar but represent independent concerns that will evolve separately.
+Every piece of **knowledge** — a formula, a wire format, an on-disk layout, a policy — has exactly one
+authoritative representation. Deduplicate knowledge. Do **not** deduplicate code that merely looks alike but
+belongs to independent concerns that will diverge.
 
-Before extracting shared code, apply these checks:
+Before extracting a shared helper, apply these checks:
 
-1. **Same knowledge, not same shape**: The duplication encodes the same domain concept — a calculation formula, a validation rule, a protocol constraint. If two code blocks happen to look alike but serve different stakeholders or change for different reasons, they are coincidental duplication and should stay separate.
-2. **Rule of Three**: Resist extracting on the first or second occurrence. Wait until you see the pattern a third time so you have enough evidence that the duplication is structural, not coincidental.
-3. **Inline test for wrong abstraction**: If the shared code already has parameters or conditionals that toggle behavior per call-site, the abstraction may be wrong. Prefer inlining the code back into each caller and letting each evolve independently over adding another flag.
+1. **Same knowledge, not same shape**: does the duplication encode the same fact? An artifact's location under
+   `target/` is one fact about the output layout. Two packing loops targeting _different container formats_
+   are two facts that happen to look alike.
+2. **Rule of Three**: resist extracting on the second occurrence. Wait for the third, when you can see which
+   parts actually vary.
+3. **Inline test for a wrong abstraction**: if the shared function has a parameter or conditional whose only
+   job is to pick a caller's behavior, the abstraction is wrong. Inline it back and let each caller evolve.
 
-When in doubt, **duplication is far cheaper than the wrong abstraction** (Sandi Metz). Inlining a premature abstraction and tolerating temporary duplication is progress, not retreat.
+**Duplication is far cheaper than the wrong abstraction.** Inlining a premature abstraction is progress.
 
 ## Examples
 
-1. **Same knowledge — deduplicate**
-Both functions compute the same discount formula. This is the same business rule duplicated.
+1. **Same knowledge — one authoritative representation**
+   Where a built artifact lands under `target/` is a fact about the output layout; the build command, the
+   bundler, and the status line all need it.
 
 ```rust
-// Bad — same discount formula duplicated in two places
-fn online_price(base: f64) -> f64 {
-    base * 0.9 // 10% discount
-}
+// ❌ Bad — the output-path convention is re-derived in three places. Adding the target
+// triple to the path means finding every format string, and missing one leaves the
+// bundler picking up a stale NRO from a path the build no longer writes to.
+let out = format!("target/{profile}/{name}.nro");
+// ...and again where the bundler picks up the NRO to wrap into an NSP
+let input = PathBuf::from(format!("target/{}/{}.nro", spec.profile, spec.name));
+// ...and again where the command reports where the artifact went
+ui::status(format!("wrote target/{profile}/{name}.nro"));
+```
 
-fn in_store_price(base: f64) -> f64 {
-    base * 0.9 // 10% discount
+```rust
+// ✅ Good — one module owns the fact; everything else asks for it. Adding the target
+// triple becomes a one-line change instead of a search.
+/// Path a built artifact is written to under `target/`.
+pub fn artifact_path(spec: &BuildSpec, format: OutputFormat) -> PathBuf {
+    PathBuf::from(format!("target/{}/{}.{}", spec.profile, spec.name, format.extension()))
+}
+```
+
+2. **Coincidental similarity — keep them separate**
+   Two sets of file names, structurally identical, encoding different knowledge.
+
+```rust
+// ❌ Bad — one shared set, because "they're both lists of special file names".
+// Now excluding a new host build file from the packed image silently makes it
+// un-declarable as a RomFS entry, and reserving a name silently drops it from bundles.
+pub const SPECIAL_ENTRIES: &[&str] = &["icon.jpg", "control.nacp", ".gitignore", "Cargo.toml"];
+```
+
+```rust
+// ✅ Good — two facts, two homes, free to diverge. Neither set can be edited
+// into changing the other's behavior, because neither set is the other's.
+/// A FORMAT fact: names the NRO asset section owns; a RomFS entry may not use them.
+const RESERVED_ENTRIES: &[&str] = &["icon.jpg", "control.nacp"];
+
+/// A BUNDLING policy: host build files omitted from the packed image.
+const EXCLUDED_ENTRIES: &[&str] = &[".gitignore", "Cargo.toml"];
+```
+
+3. **Wrong abstraction — inline it back**
+   One packer turns segments into an **NRO**, another into an **NSP**. They look almost identical. They are
+   not the same knowledge.
+
+```rust
+// ❌ Bad — one "universal" packer with a format flag. The two paths already differ (an NSP
+// carries an NPDM and a PFS0 index; an NRO carries an asset section, and must emit no
+// asset section at all when there are no assets rather than an empty one). Every format
+// change adds another flag, and each flag is a chance to break the other caller.
+fn pack(
+    segments: &[Segment],
+    format: OutputFormat,
+    options: PackOptions, // { write_npdm, embed_assets, empty_as_none }
+) -> Result<Vec<u8>, PackError> {
+    // ~80 lines of `if format == OutputFormat::Nsp { ... } else { ... }`
 }
 ```
 
 ```rust
-// Good — single authoritative representation of the discount rule
-fn apply_standard_discount(base: f64) -> f64 {
-    base * 0.9
-}
-```
-
-2. **Coincidental similarity — keep separate**
-Two validation functions look alike today but serve different domains that will diverge.
-
-```rust
-// Bad — forced into one abstraction because the code looks similar
-fn validate_input(value: &str, kind: &str) -> Result<String> {
-    let trimmed = value.trim().to_string();
-    if trimmed.is_empty() {
-        return Err(anyhow!("{kind} must not be empty"));
-    }
-    if kind == "username" && trimmed.len() > 32 {
-        return Err(anyhow!("username too long"));
-    }
-    if kind == "email" && !trimmed.contains('@') {
-        return Err(anyhow!("invalid email"));
-    }
-    // More kind-specific branches accumulate here over time
-    Ok(trimmed)
-}
-```
-
-```rust
-// Good — independent concerns stay separate, each free to evolve
-fn validate_username(value: &str) -> Result<Username> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(anyhow!("username must not be empty"));
-    }
-    if trimmed.len() > 32 {
-        return Err(anyhow!("username too long"));
-    }
-    Ok(Username(trimmed.to_owned()))
+// ✅ Good — two packers, each owning one container format's rules, each independently
+// testable. A change to NSP layout cannot reach the NRO packer's tests.
+/// Pack segments into an NRO. No assets produces no asset section.
+pub fn pack_nro(segments: &[Segment], assets: Option<&Assets>) -> Result<Vec<u8>, PackError> {
+    // ...
 }
 
-fn validate_email(value: &str) -> Result<Email> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(anyhow!("email must not be empty"));
-    }
-    if !trimmed.contains('@') {
-        return Err(anyhow!("invalid email"));
-    }
-    Ok(Email(trimmed.to_owned()))
-}
-```
-
-3. **Wrong abstraction — inline and restart**
-A shared helper has accumulated conditionals to serve diverging call-sites. Inline it back.
-
-```rust
-// Bad — wrong abstraction with growing conditional complexity
-fn build_query(table: &str, filters: &[Filter], include_deleted: bool, use_cache: bool) -> String {
-    let mut q = format!("SELECT * FROM {table}");
-    if !filters.is_empty() {
-        q.push_str(" WHERE ");
-        q.push_str(&filters.iter().map(|f| f.to_sql()).collect::<Vec<_>>().join(" AND "));
-    }
-    if !include_deleted {
-        let keyword = if filters.is_empty() { " WHERE " } else { " AND " };
-        q.push_str(&format!("{keyword}deleted_at IS NULL"));
-    }
-    if use_cache {
-        q.push_str(" /* cached */");
-    }
-    q
-}
-```
-
-```rust
-// Good — each caller builds its own query, no shared conditional mess
-fn build_user_query(filters: &[Filter]) -> String {
-    let mut q = "SELECT * FROM users WHERE deleted_at IS NULL".to_string();
-    for f in filters {
-        q.push_str(&format!(" AND {}", f.to_sql()));
-    }
-    q
-}
-
-fn build_audit_query(filters: &[Filter]) -> String {
-    // Audit queries include deleted records, different structure
-    let mut q = "SELECT * FROM audit_log".to_string();
-    if !filters.is_empty() {
-        q.push_str(" WHERE ");
-        q.push_str(&filters.iter().map(|f| f.to_sql()).collect::<Vec<_>>().join(" AND "));
-    }
-    q
-}
-```
-
-4. **Extract shared knowledge into a trait**
-When the shared concept is behavior rather than data, a trait provides a single authoritative definition without forcing unrelated call-sites together.
-
-```rust
-// Bad — retry logic duplicated across services
-async fn fetch_prices(client: &Client, url: &str) -> Result<Prices> {
-    for attempt in 0..3 {
-        match client.get(url).send().await {
-            Ok(resp) => return resp.json().await.map_err(Into::into),
-            Err(e) if attempt < 2 => tokio::time::sleep(Duration::from_millis(100 << attempt)).await,
-            Err(e) => return Err(e.into()),
-        }
-    }
-    unreachable!()
-}
-
-async fn fetch_inventory(client: &Client, url: &str) -> Result<Inventory> {
-    for attempt in 0..3 {
-        match client.get(url).send().await {
-            Ok(resp) => return resp.json().await.map_err(Into::into),
-            Err(e) if attempt < 2 => tokio::time::sleep(Duration::from_millis(100 << attempt)).await,
-            Err(e) => return Err(e.into()),
-        }
-    }
-    unreachable!()
-}
-```
-
-```rust
-// Good — retry knowledge encoded once, reused via generic function
-async fn with_retries<T, F, Fut>(max_attempts: u32, mut f: F) -> Result<T>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T>>,
-{
-    for attempt in 0..max_attempts {
-        match f().await {
-            Ok(val) => return Ok(val),
-            Err(e) if attempt + 1 < max_attempts => {
-                tokio::time::sleep(Duration::from_millis(100 << attempt)).await;
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    unreachable!()
-}
-
-// Each caller stays focused on its own concern
-async fn fetch_prices(client: &Client, url: &str) -> Result<Prices> {
-    with_retries(3, || async { Ok(client.get(url).send().await?.json().await?) }).await
+/// Pack segments into an NSP, carrying the NPDM descriptor and the PFS0 index the
+/// container requires.
+pub fn pack_nsp(segments: &[Segment], npdm: &NpdmSpec) -> Result<Vec<u8>, PackError> {
+    // ...
 }
 ```
 
 ## Why It Matters
 
-Genuine duplication — the same business rule written in multiple places — means a change to that rule requires coordinated edits. Miss one and you have an inconsistency bug. Extracting shared knowledge into a single representation eliminates this class of defect.
+Duplicated knowledge means coordinated edits. Miss one copy of an output-path template and the build writes to
+a path nothing reads, while the deploy uploads yesterday's binary — no compile error, no test failure, and a
+console running code nobody changed.
 
-However, premature deduplication is equally harmful. When code that merely *looks* alike is forced into a shared abstraction, every caller becomes coupled to every other caller's requirements. The abstraction accumulates parameters and conditionals to serve diverging needs, becoming harder to understand and modify than the original duplication ever was. Undoing a wrong abstraction is more expensive than never creating it.
-
-The balance: deduplicate knowledge, tolerate duplicated code shapes.
+Duplicated _shape_ forced into one abstraction costs more. A shared `pack(segments, format, options)` couples
+one container format to the other: a change on one side touches code the other side's tests cover, and the
+flags grow until nobody can say what the function does without reading every branch. Undoing that is harder
+than never building it.
 
 ## Pragmatism Caveat
 
-The Rule of Three is a guideline, not a law. Sometimes two occurrences clearly encode the same invariant and the third will never come — deduplicating at two is fine when you are confident the knowledge is shared, not coincidentally similar. Conversely, even three occurrences should stay separate if they represent independent stakeholders likely to diverge.
+The Rule of Three is a heuristic. Two occurrences of an unmistakable fact (a format's magic bytes, a protocol
+constant like `MAX_FILE_CHUNK_SIZE`) can be extracted immediately; three occurrences that serve three
+container formats should stay apart.
 
-When you choose to tolerate duplication intentionally, add a brief comment noting that the similarity is coincidental and the code should evolve independently. When you extract an abstraction, make sure it names the shared *concept*, not just the shared *shape*. An undocumented decision to deduplicate or to keep duplication is always wrong.
+Small helpers duplicated across module or crate boundaries are usually correct. A four-line conversion helper
+copied into two sibling modules is not a violation: promoting it to `pub(crate)` or to a shared crate to save
+eight lines widens an API surface and stops the two modules changing independently. Prefer the private copy.
+
+When you keep duplication on purpose, say so in a comment. When you extract, make sure the name describes the
+shared _concept_ (`artifact_path`), not the shared _shape_ (`pack`, `handle_thing`). An undocumented decision
+either way is always wrong.
 
 ## Checklist
 
-- [ ] Shared code encodes the same domain knowledge, not merely similar-looking syntax
-- [ ] Extractions waited for at least three occurrences (or two with documented confidence)
-- [ ] Shared abstractions have zero call-site-specific conditionals or behavior toggles
-- [ ] Intentionally duplicated code has a comment explaining why it should remain separate
-- [ ] Existing shared code is reviewed for wrong-abstraction signals before adding new callers
+Before committing code, verify:
+
+- [ ] Extracted code encodes one fact, not one syntax shape
+- [ ] No shared helper takes a flag, mode, or `kind` parameter that exists only to select a caller's behavior
+- [ ] Wire-format constants, on-disk layouts, and spec values have exactly one definition
+- [ ] Similar-looking code that serves two container formats or two policies stays in two places
+- [ ] Deliberate duplication carries a comment explaining that the similarity is coincidental
+- [ ] Cross-crate hoisting is justified by shared knowledge, not by line count
 
 ## References
 
-- [principle-single-responsibility](principle-single-responsibility.md) - Related: SRP helps identify when an abstraction serves multiple concerns
-- [principle-open-closed](principle-open-closed.md) - Related: OCP extension points are the right place for shared behavior
+- [principle-single-responsibility](principle-single-responsibility.md) - Related: A helper serving two concerns
+  is the wrong abstraction by definition
+- [principle-open-closed](principle-open-closed.md) - Related: Registries and extension points are where
+  genuinely shared behavior belongs; flags are not
+- [principle-least-surprise](principle-least-surprise.md) - Related: An abstraction named for its shape rather
+  than its concept surprises every caller
+- [principle-symmetry](principle-symmetry.md) - Related: Make near-duplicates symmetric first; only then is it
+  visible whether they are one fact or two
+- [principle-rate-of-change](principle-rate-of-change.md) - Related: Two copies that change on different
+  schedules are two facts, whatever their shape says
 
 ## External References
 
 - [The Wrong Abstraction — Sandi Metz](https://sandimetz.com/blog/2016/1/20/the-wrong-abstraction)
+- [DRY is about Knowledge (Verraes)](https://verraes.net/2014/08/dry-is-about-knowledge/)
 - [Caught in a Bad Abstraction — Israeli Tech Radar](https://medium.com/israeli-tech-radar/caught-in-a-bad-abstraction-55bfe6634b83)
 - [DRY: Most Over-rated Programming Principle — Gordon C](https://gordonc.bearblog.dev/dry-most-over-rated-programming-principle/)
-- [DRY Principle in Rust — CodeSignal](https://codesignal.com/learn/courses/applying-clean-code-principles-in-rust/lessons/applying-clean-code-principles-in-rust-understanding-and-implementing-the-dry-principle)
-- [12 Design Principles in Rust — Bagwan Pankaj](https://blog.bagwanpankaj.com/architecture/12-design-principles-you-can-implement-in-rust)

@@ -7,256 +7,164 @@ scope: "global"
 
 # Test Functions - Naming and Structure
 
-**🚨 MANDATORY patterns for writing individual test functions in Rust**
+**MANDATORY patterns for writing individual test functions in Rust**
 
-## 🎯 PURPOSE
+## Test Naming Conventions
 
-This document covers the essential patterns for writing a single test function: naming conventions, framework selection, Given-When-Then structure, assertions, and forbidden patterns.
+Naming is the first decision when writing a test. Every test function uses the format:
 
-For test file organization (where tests go in the directory structure), see [Test File Organization](test-files.md).
+`<function_name>_<scenario>_<expected_outcome>()`
 
-For test type selection and placement, see [Test Organization](test-organization.md).
+- **function_name**: the exact name of the function being tested
+- **scenario**: the specific input condition, state, or situation
+- **expected_outcome**: what should happen (`succeeds`, `fails`, `returns_none`, ...)
 
----
-
-## 📝 TEST NAMING CONVENTIONS
-
-**Test naming conventions MUST appear first because they are the first decision when writing a test.**
-
-All test functions must follow descriptive naming patterns that explain the scenario being tested. This makes tests self-documenting and improves maintainability.
-
-### 🏷️ Required Naming Pattern
-
-Use the format: `<function_name>_<scenario>_<expected_outcome>()`
-
-**Components:**
-- **function_name**: The exact name of the function being tested
-- **scenario**: The specific input condition, state, or situation
-- **expected_outcome**: What should happen (succeeds, fails, returns_none, etc.)
-
-### ✅ Correct Examples
+A name in this form answers what is tested, under what conditions, and what should happen, so a CI failure is legible without opening the test body.
 
 ```rust
-// Testing different scenarios for the same function
-#[tokio::test]
-async fn insert_job_with_valid_data_succeeds() { /* ... */ }
+// ✅ Good — each name states the scenario and the outcome, so a failing CI line is self-explanatory
+#[test]
+fn try_from_bytes_with_valid_nro_succeeds() { /* ... */ }
+
+#[test]
+fn try_from_bytes_with_truncated_segment_fails() { /* ... */ }
+
+#[test]
+fn asset_header_with_no_asset_section_returns_none() { /* ... */ }
 
 #[tokio::test]
-async fn insert_job_with_duplicate_id_fails() { /* ... */ }
-
-#[tokio::test]
-async fn insert_job_with_invalid_status_fails() { /* ... */ }
-
-// Testing retrieval functions
-#[tokio::test]
-async fn get_by_id_with_existing_id_returns_record() { /* ... */ }
-
-#[tokio::test]
-async fn get_by_id_with_nonexistent_id_returns_none() { /* ... */ }
-
-#[tokio::test]
-async fn get_by_id_with_malformed_id_fails() { /* ... */ }
-
-// Testing state transitions
-#[test]
-fn update_status_with_valid_transition_succeeds() { /* ... */ }
+async fn discover_with_no_console_listening_returns_none() { /* ... */ }
 
 #[test]
-fn update_status_with_invalid_transition_fails() { /* ... */ }
-
-#[test]
-fn update_status_with_terminal_state_fails() { /* ... */ }
-
-// Testing edge cases and boundary conditions
-#[test]
-fn validate_worker_id_with_empty_input_fails() { /* ... */ }
-
-#[test]
-fn validate_worker_id_with_max_length_succeeds() { /* ... */ }
-
-#[test]
-fn validate_worker_id_with_too_long_input_fails() { /* ... */ }
+fn validate_entry_path_with_max_length_succeeds() { /* ... */ }
 ```
 
-### ❌ Incorrect Examples
-
 ```rust
-// ❌ WRONG - Vague, non-descriptive names
+// ❌ Bad — vague names force a reader to open the body to learn what broke
 #[test]
-fn test_insert() { /* ... */ }
+fn test_parse() { /* ... */ }
 
 #[test]
-fn insert_works() { /* ... */ }
+fn parse_works() { /* ... */ }
+
+// ❌ Bad — "test" in the name is redundant; #[test] already says it
+#[test]
+fn test_try_from_bytes_with_valid_nro_succeeds() { /* ... */ }
 
 #[test]
-fn test_validation() { /* ... */ }
+fn validate_entry_path_test_returns_error() { /* ... */ }
 
-// ❌ WRONG - Including "test" in test names is redundant
+// ❌ Bad — missing scenario: which input made it succeed?
 #[test]
-fn test_insert_job_with_valid_data_succeeds() { /* ... */ }
+fn try_from_bytes_succeeds() { /* ... */ }
 
+// ❌ Bad — missing expected outcome: succeeds or fails?
 #[test]
-fn insert_job_test_with_valid_data() { /* ... */ }
+fn try_from_bytes_with_valid_nro() { /* ... */ }
 
+// ❌ Bad — two functions under test violates single responsibility; split into two tests
 #[test]
-fn validate_worker_id_test_returns_error() { /* ... */ }
-
-// ❌ WRONG - Missing scenario description
-#[test]
-fn insert_job_succeeds() { /* ... */ }  // What input scenario?
-
-#[test]
-fn get_by_id_fails() { /* ... */ }      // Under what conditions?
-
-// ❌ WRONG - Missing expected outcome
-#[test]
-fn insert_job_with_valid_data() { /* ... */ }  // Succeeds or fails?
-
-#[test]
-fn get_by_id_with_invalid_id() { /* ... */ }   // Returns what?
-
-// ❌ WRONG - Testing multiple functions (violates single responsibility)
-#[test]
-fn create_and_update_job_succeeds() { /* ... */ }  // Should be split into two tests
+fn build_and_parse_nro_succeeds() { /* ... */ }
 ```
 
-### 🎯 Naming Guidelines by Test Type
+### Naming by Test Type
 
-#### **Unit Tests - Pure Logic**
-Focus on input conditions and business rules:
+Unit tests name input conditions and format rules; integration tests name the state of the external thing they touch; end-to-end tests name workflows.
+
 ```rust
-fn validate_input_with_empty_string_fails() {}
-fn calculate_total_with_valid_items_succeeds() {}
-fn parse_config_with_malformed_json_fails() {}
-fn format_timestamp_with_utc_returns_iso_string() {}
+// ✅ Good — unit: the scenario is an input condition
+fn parse_npdm_with_malformed_json_fails() {}
+
+// ✅ Good — integration: the scenario is the state on disk
+fn write_image_with_empty_dir_produces_empty_image() {}
+
+// ✅ Good — end-to-end: the scenario is a workflow
+fn build_and_deploy_nro_workflow_succeeds() {}
 ```
 
-#### **Database Integration Tests**
-Include database state and operations:
+### Length and Clarity
+
+Be descriptive but concise, use domain terminology consistently, avoid abbreviations that are not well established in the domain, and stay near ~60 characters where possible, prioritizing clarity over the limit.
+
 ```rust
-async fn insert_record_with_valid_data_succeeds() {}
-async fn update_status_with_concurrent_modification_fails() {}
-async fn delete_by_id_with_existing_record_succeeds() {}
-async fn get_by_id_with_deleted_record_returns_none() {}
+// ✅ Good — descriptive and still readable at a glance
+fn send_nro_with_insufficient_console_space_returns_error() {}
+
+// 🔶 Acceptable — over-long, but only where the extra words are needed for clarity
+fn try_from_bytes_with_asset_header_past_the_declared_size_returns_none() {}
+
+// ❌ Bad — abbreviations that no reader can decode
+fn tfb_inv_hdr_fails() {}
 ```
 
-#### **API Integration Tests**
-Focus on workflows and end-to-end scenarios:
-```rust
-async fn register_worker_and_schedule_job_workflow_succeeds() {}
-async fn worker_heartbeat_update_with_expired_session_fails() {}
-async fn job_completion_with_multiple_workers_maintains_consistency() {}
-```
+## Testing Framework Selection
 
-### 📏 Length and Clarity Guidelines
-
-- **Be descriptive but concise** - aim for clarity over brevity
-- **Use domain terminology** consistently
-- **Avoid abbreviations** unless they're well-established in the domain
-- **Maximum ~60 characters** when possible, but prioritize clarity
+Use standard `#[test]` for synchronous functions and `#[tokio::test]` for async functions.
 
 ```rust
-// Good balance of descriptive and concise
-fn validate_email_with_missing_at_symbol_fails() {}
-fn process_payment_with_insufficient_funds_returns_error() {}
-
-// Too verbose (but acceptable if needed for clarity)
-fn update_worker_heartbeat_timestamp_with_nonexistent_worker_id_succeeds_silently() {}
-
-// Too abbreviated (avoid)
-fn upd_hb_inv_wrk_fails() {}
-```
-
----
-
-## 🚨 TESTING FRAMEWORK SELECTION
-
-### ✅ Use standard `#[test]` for synchronous functions
-
-```rust
+// ✅ Good — sync function under test, so a plain #[test] is enough
 #[test]
-fn pure_function_with_valid_input_returns_expected_value() {
+fn plan_segments_with_page_aligned_elf_returns_three_bounds() {
     //* Given
-    let input = create_test_input();
+    let elf = fixture_elf();
 
     //* When
-    let result = pure_function(input);
+    let result = plan_segments(&elf);
 
     //* Then
-    assert_eq!(result, expected_value);
+    assert_eq!(result.len(), 3);
+}
+
+// ✅ Good — async function under test needs a runtime
+#[tokio::test]
+async fn discover_with_no_console_listening_returns_none() {
+    //* Given
+    let timeout = Duration::from_millis(50);
+
+    //* When
+    let result = discover(timeout, 1).await;
+
+    //* Then
+    assert!(result.expect("discovery should not error").is_none());
 }
 ```
 
-### ✅ Use `#[tokio::test]` for async functions
+## Given-When-Then Structure (Mandatory)
+
+Every test follows the Given-When-Then pattern with **MANDATORY** `//* Given`, `//* When`, and `//* Then` marker comments. The markers are keyword-only: no trailing text on the marker line; any prose goes on the next line as an ordinary `//` comment.
+
+| Marker | Required | Purpose | Content |
+|---|---|---|---|
+| `//* Given` | Optional (omit when there is no setup) | Preconditions, test data, fixtures, system state | Variable declarations, temp directory setup, fixture construction |
+| `//* When` | Required | Execute **exactly one** function under test | **Only** the single call being tested |
+| `//* Then` | Required | Assert outcomes and side effects | **Only** assertions and assertion helpers such as `.expect()` used to extract a value |
+
+More than one call in `//* When` means the test scope is too broad and failure attribution is impossible. Business logic in `//* Then` obscures what is being verified: if a value must be transformed before asserting, the transformation belongs in `//* Given`, or the test is verifying two things and should be split.
 
 ```rust
-#[tokio::test]
-async fn async_function_with_test_data_succeeds() {
-    //* Given
-    let input_data = setup_test_data();
-
-    //* When
-    let result = some_async_function(input_data).await;
-
-    //* Then
-    assert_eq!(result, expected_value);
-}
-```
-
----
-
-## 📝 GIVEN-WHEN-THEN STRUCTURE (MANDATORY)
-
-Every test must follow the GIVEN-WHEN-THEN pattern with **MANDATORY** `//* Given`, `//* When`, and `//* Then` comments. This structure ensures clear test organization and makes tests self-documenting.
-
-### 🔧 Structure Requirements
-
-#### `//* Given` - Setup (OPTIONAL)
-- **Purpose**: Set up preconditions, test data, mocks, and system state
-- **Content**: Variable declarations, database setup, mock configurations
-- **Optional**: Can be omitted if no setup is required for simple tests
-
-#### `//* When` - Action (REQUIRED)
-- **Purpose**: Execute **EXACTLY ONE** function under test
-- **Content**: **ONLY** the single function call being tested
-- **Critical**: Must test exactly one function - multiple function calls indicate the test scope is too broad
-
-#### `//* Then` - Verification (REQUIRED)
-- **Purpose**: Assert expected outcomes and verify side effects
-- **Content**: **ONLY** assertions and assertion-helping logic (like `.expect()` calls to extract values for assertions)
-- **Restrictions**: No business logic, no additional function calls beyond assertion helpers
-
-### 📋 Complete Example
-
-```rust
-#[tokio::test]
-async fn function_name_scenario_expected_outcome() {
-    //* Given
-    let db = temp_metadata_db().await;
-    let test_data = create_test_record();
-    let expected_status = JobStatus::Scheduled;
-
-    //* When
-    let result = insert_record(&db.pool, &test_data).await;
-
-    //* Then
-    assert!(result.is_ok(), "record insertion should succeed with valid data");
-    let record_id = result.expect("should return valid record ID");
-    assert!(record_id.as_i64() > 0, "record ID should be positive");
-
-    // Verify side effects
-    let inserted_record = get_record_by_id(&db.pool, record_id).await
-        .expect("should retrieve inserted record")
-        .expect("record should exist");
-    assert_eq!(inserted_record.status, expected_status);
-}
-```
-
-### ✅ Simple Test Without Given Section
-
-```rust
+// ✅ Good — one call under test, and the Then section only asserts
 #[test]
-fn validate_get_default_fails_if_uninitialized() {
+fn write_image_with_populated_dir_succeeds() {
+    //* Given
+    let dir = tempfile::tempdir().expect("temp dir should be created");
+    let out = dir.path().join("image.romfs");
+    let expected_entries = seed_assets(dir.path());
+
+    //* When
+    let result = write_image(dir.path(), &out);
+
+    //* Then
+    assert!(result.is_ok(), "image write should succeed with a populated dir");
+    let written = result.expect("should return the written byte count");
+    assert!(written > 0, "the written byte count should be positive");
+    let image = RomFs::try_from_bytes(&std::fs::read(&out).expect("should read the image"))
+        .expect("the written image should parse back");
+    assert_eq!(image.root_dir().entries().count(), expected_entries);
+}
+
+// ✅ Good — no setup needed, so Given is omitted
+#[test]
+fn get_default_with_uninitialized_state_fails() {
     //* When
     let result = get_default();
 
@@ -268,126 +176,73 @@ fn validate_get_default_fails_if_uninitialized() {
 }
 ```
 
-### ❌ VIOLATIONS - What NOT to do
-
 ```rust
-// ❌ WRONG - Missing mandatory comments
+// ❌ Bad — no markers, so the reader cannot tell setup from action from assertion
 #[test]
-fn bad_test_without_comments() {
+fn validate_input_with_valid_data_succeeds() {
     let input = "test";
     let result = validate_input(input);
     assert!(result.is_ok());
 }
 
-// ❌ WRONG - Multiple functions in When section
-#[tokio::test]
-async fn bad_test_multiple_functions() {
+// ❌ Bad — two functions in When, so a failure names neither of them
+#[test]
+fn add_file_with_existing_entry_succeeds() {
     //* Given
-    let db = temp_metadata_db().await;
+    let mut builder = RomFsBuilder::new();
 
     //* When
-    let user = create_user(&db.pool, "test").await;  // Function 1
-    let result = update_user(&db.pool, user.id).await;  // Function 2 - WRONG!
+    let path = validate_entry_path("romfs/config.json").expect("path should be valid");
+    let result = builder.add_file(path, b"{}".to_vec());
 
     //* Then
     assert!(result.is_ok());
 }
 
-// ❌ WRONG - Business logic in Then section
-#[tokio::test]
-async fn bad_test_logic_in_then() {
+// ❌ Bad — business logic in Then hides which behavior is actually under test
+#[test]
+fn asset_header_with_asset_section_returns_header() {
     //* Given
-    let db = temp_metadata_db().await;
+    let bytes = fixture_nro_with_assets();
 
     //* When
-    let result = get_user(&db.pool, user_id).await;
+    let result = Nro::try_from_bytes(&bytes);
 
     //* Then
     assert!(result.is_ok());
-    let user = result.expect("should get user");
-
-    // WRONG - Business logic in Then section
-    let processed_name = user.name.to_uppercase();  // This belongs in Given
-    let expected_email = format!("{}@test.com", processed_name);  // This belongs in Given
-    assert_eq!(user.email, expected_email);
+    let nro = result.expect("should parse the NRO");
+    let icon = nro.icon().expect("should have an icon");
+    let expected_len = icon.len().next_power_of_two();
+    assert_eq!(padded_len(icon), expected_len);
 }
 ```
 
----
+## Forbidden Patterns
 
-## ❌ FORBIDDEN PATTERNS
+### Never Use `unwrap()` in Tests
 
-### Never use `unwrap()` in tests
+A panicking `unwrap()` reports only "called `Result::unwrap()` on an `Err` value". `.expect("...")` turns the same panic into an actionable message naming what was expected and what happened.
 
 ```rust
-// ❌ WRONG - Don't use unwrap() in tests
-#[tokio::test]
-async fn wrong_pattern() {
-    //* Given
-    let input = setup_data();
+// ❌ Bad — panics with no context about what was expected
+let result = risky_operation(input).await.unwrap();
 
-    //* When
-    let result = risky_operation(input).await.unwrap(); // Wrong - can panic
-
-    //* Then
-    assert_eq!(result, value);
-}
-
-// ✅ CORRECT - Use expect() with descriptive messages
-#[tokio::test]
-async fn correct_pattern() {
-    //* Given
-    let input = setup_data();
-
-    //* When
-    let result = risky_operation(input).await
-        .expect("risky_operation should succeed with valid input");
-
-    //* Then
-    assert_eq!(result, value);
-}
+// ✅ Good — the panic message names the expectation and prints the actual error
+let result = risky_operation(input).await
+    .expect("risky_operation should succeed with valid input");
 ```
 
-### Never test multiple functions in one test
+### Never Test Multiple Functions in One Test
+
+One test exercises exactly one function, as required by the `//* When` rule above. Two calls under test means a failure names neither of them; split the test in two.
+
+## Assertion Patterns
+
+Every assertion carries a descriptive failure message.
 
 ```rust
-// ❌ WRONG - Testing multiple functions violates single responsibility
-#[tokio::test]
-async fn wrong_multiple_functions() {
-    //* Given
-    let input = setup_test_data();
-
-    //* When
-    let result1 = function_a(input).await.expect("function_a should work");
-    let result2 = function_b(input).await.expect("function_b should work"); // Wrong - multiple functions under test
-
-    //* Then
-    assert_eq!(result1 + result2, expected_value);
-}
-
-// ✅ CORRECT - Test exactly one function
-#[tokio::test]
-async fn correct_single_function() {
-    //* Given
-    let input = setup_test_data();
-
-    //* When
-    let result = function_a(input).await.expect("function_a should work");
-
-    //* Then
-    assert_eq!(result, expected_value);
-}
-```
-
----
-
-## 🎯 ASSERTION PATTERNS
-
-### Rust-specific Assertions
-
-```rust
+// ✅ Good — each assertion states what should hold, so failures read as sentences
 fn assertions() {
-    // Use descriptive assertion messages
     assert_eq!(actual, expected, "values should be equal");
     assert_ne!(actual, unexpected, "values should be different");
     assert!(condition, "condition should be true");
@@ -403,126 +258,34 @@ fn assertions() {
     assert!(matches!(error, MyError::ValidationError(_)),
         "Expected ValidationError, got {:?}", error);
 
-    // For Result types with expect
+    // For Result types
     let value = result.expect("operation should succeed with valid input");
 }
 ```
 
-### Testing Complex Data Structures
+For collections, assert the shape first, then locate individual items and assert on them.
 
 ```rust
-#[tokio::test]
-async fn process_users_transforms_data_correctly() {
-    //* Given
-    let input = UserBatch {
-        users: vec![
-            User { id: 1, name: "Alice".to_string(), age: 30 },
-            User { id: 2, name: "Bob".to_string(), age: 25 },
-        ],
-    };
-
-    //* When
-    let result = process_users(input).await
-        .expect("user processing should succeed");
-
-    //* Then
-    assert_eq!(result.processed_users.len(), 2, "should process both users");
-
-    // Test individual items
-    let alice = result.processed_users.iter()
-        .find(|u| u.id == 1)
-        .expect("Alice should be in processed results");
-    assert_eq!(alice.name, "Alice");
-    assert!(alice.processed, "Alice should be marked as processed");
-
-    let bob = result.processed_users.iter()
-        .find(|u| u.id == 2)
-        .expect("Bob should be in processed results");
-    assert_eq!(bob.name, "Bob");
-    assert!(bob.processed, "Bob should be marked as processed");
-}
-```
-
----
-
-## 🧪 COMPLETE EXAMPLES
-
-### Unit Test Example
-
-```rust
+// ✅ Good — the length assertion fails first and explains a size mismatch before item lookups panic
 #[test]
-fn validate_worker_id_with_valid_input_succeeds() {
+fn plan_segments_with_three_sections_returns_each_page_aligned() {
     //* Given
-    let valid_id = "worker-123";
+    let elf = fixture_elf_with_sections(&[".text", ".rodata", ".data"]);
 
     //* When
-    let result = validate_worker_id(valid_id);
+    let segments = plan_segments(&elf).expect("segment planning should succeed");
 
     //* Then
-    assert!(result.is_ok(), "validation should succeed with valid input");
-    assert_eq!(result.expect("should return valid value"), valid_id);
-}
-
-#[test]
-fn validate_worker_id_with_empty_input_fails() {
-    //* Given
-    let empty_id = "";
-
-    //* When
-    let result = validate_worker_id(empty_id);
-
-    //* Then
-    assert!(result.is_err(), "validation should fail with empty input");
-    let error = result.expect_err("should return validation error");
-    assert!(matches!(error, ValidationError::EmptyId),
-        "Expected EmptyId error, got {:?}", error);
+    assert_eq!(segments.len(), 3, "should plan one segment per section");
+    let text = segments.iter()
+        .find(|segment| segment.kind == SegmentKind::Text)
+        .expect("the text segment should be planned");
+    assert_eq!(text.offset % PAGE_SIZE, 0, "the text segment should be page aligned");
+    assert!(text.size > 0, "the text segment should not be empty");
 }
 ```
 
-### Async Test Example
-
-```rust
-#[tokio::test]
-async fn insert_record_with_valid_data_returns_record_id() {
-    //* Given
-    let db = temp_metadata_db().await;
-    let test_data = TestRecord {
-        name: "test_record".to_string(),
-        value: 42,
-    };
-
-    //* When
-    let insert_result = insert_record(&db.pool, &test_data).await;
-
-    //* Then
-    assert!(insert_result.is_ok(), "record insertion should succeed");
-    let record_id = insert_result.expect("should return valid record ID");
-    assert!(record_id > 0, "should return positive record ID");
-}
-```
-
-### Error Handling Test Example
-
-```rust
-#[test]
-fn create_with_negative_value_fails_with_validation_error() {
-    //* Given
-    let config = Config { initial_value: -1 };
-
-    //* When
-    let result = MyStruct::new(config);
-
-    //* Then
-    assert!(result.is_err(), "creation with negative value should fail");
-    let error = result.expect_err("should return validation error");
-    assert!(matches!(error, MyError::ValidationError(_)),
-        "Expected ValidationError, got {:?}", error);
-}
-```
-
----
-
-## CHECKLIST
+## Checklist
 
 Before submitting a test function for review, verify:
 
@@ -530,6 +293,7 @@ Before submitting a test function for review, verify:
 - [ ] Test name does NOT include the word "test" (it's already marked with `#[test]`)
 - [ ] Test uses correct framework: `#[test]` for sync, `#[tokio::test]` for async
 - [ ] Test has `//* Given`, `//* When`, and `//* Then` comments (Given optional if no setup needed)
+- [ ] Marker comments are keyword-only; explanatory prose goes on a following `//` line
 - [ ] `//* When` section calls EXACTLY ONE function under test
 - [ ] `//* Then` section contains ONLY assertions and assertion helpers
 - [ ] No `unwrap()` calls - all use `.expect("descriptive message")` instead
@@ -537,40 +301,7 @@ Before submitting a test function for review, verify:
 - [ ] Test focuses on a single scenario (not testing multiple functions or workflows)
 - [ ] Test name is descriptive and explains what is being tested
 
-## RATIONALE
+## References
 
-### Why descriptive naming matters
-
-Test names serve as documentation. When a test fails in CI, the name should immediately communicate what functionality broke and under what conditions. Generic names like `test_insert()` or `insert_works()` provide no context, forcing developers to read the entire test body to understand what failed.
-
-The `<function_name>_<scenario>_<expected_outcome>` pattern ensures every test name answers three critical questions:
-1. **What** is being tested? (function_name)
-2. **Under what conditions**? (scenario)
-3. **What should happen**? (expected_outcome)
-
-### Why Given-When-Then structure is mandatory
-
-The Given-When-Then structure enforces the Arrange-Act-Assert testing pattern, which is the foundation of readable and maintainable tests. The mandatory comment markers (`//* Given`, `//* When`, `//* Then`) make test structure immediately visible, even when scanning code quickly.
-
-This pattern prevents common anti-patterns:
-- Testing multiple functions in one test (violates single responsibility)
-- Mixing setup, execution, and assertion logic (hard to debug)
-- Unclear test boundaries (makes refactoring risky)
-
-The `//* When` section's "exactly one function" rule is critical: it ensures tests have clear failure attribution. If a test calls multiple functions, it's impossible to know which function caused a failure without debugging.
-
-### Why .expect() instead of .unwrap()
-
-Tests should never panic without explanation. When `.unwrap()` panics, the error message is generic: "called `Result::unwrap()` on an `Err` value". This provides no context about what failed or why.
-
-Using `.expect("descriptive message")` transforms panic messages into actionable debugging information: "risky_operation should succeed with valid input: Err(ValidationError(EmptyInput))". The developer immediately knows what was expected and what actually happened.
-
-### Why no business logic in assertions
-
-The `//* Then` section must contain only assertions because any business logic in this section obscures what's actually being verified. If you need to transform data before asserting on it, that transformation belongs in `//* Given` (setup) or indicates the test is verifying the wrong thing.
-
-Example: If you're testing `get_user()` but then uppercase the returned name to compare against an expected value, you're actually testing two things: (1) get_user returns the right record, and (2) name uppercasing logic works. Split this into two tests.
-
----
-
-This document covers all essential patterns for authoring individual test functions. For test file organization patterns, see [Test File Organization](test-files.md). For test type selection and placement, see [Test Organization](test-organization.md).
+- [test-files](test-files.md) - Related: Where test modules and files live in the directory structure
+- [test-organization](test-organization.md) - Related: Test tier selection (unit, integration, e2e) and how the suites are run

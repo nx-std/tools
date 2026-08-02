@@ -1,17 +1,17 @@
 ---
 name: "code-principle"
-description: "Structure template for `docs/code/principle-*.md` guideline docs. Load when creating or editing principle docs in docs/code/"
-type: meta
+description: "Structure template for `docs/code/principle-*.md` rule documents. Load when creating or editing principle docs in docs/code/"
+type: "meta"
 scope: "global"
 ---
 
-# Principle Code Guideline Template
+# Principle Rule Document Template
 
 **MANDATORY structure for ALL `docs/code/principle-*.md` documents**
 
 ## Structure
 
-Every principle guideline document contains the following sections in order.
+Every principle rule document contains the following sections in order.
 
 ### Frontmatter (required)
 
@@ -31,9 +31,12 @@ See [code.md §3](code.md#3-naming-schema) for full naming rules.
 
 H1 principle name with a parenthetical clarification, e.g. "Law of Demeter (Principle of Least Knowledge)".
 
-#### Applicability (required)
+#### Scope line (omitted)
 
-Always the bold line `**MANDATORY for ALL code in the workspace**`.
+**No scope line.** A principle document is `scope: "global"` and governs all code in the
+workspace, so a bold line saying so restates the frontmatter, the title, and the corpus-wide
+mandate in [code.md §1](code.md#1-core-principles). The H1 is followed directly by `## Rule`.
+See [code.md §5](code.md#5-document-structure).
 
 ### Body
 
@@ -45,10 +48,13 @@ Includes guidance on how to recognize violations.
 #### Examples (required)
 
 Bad/Good code pairs (at least one, recommended not more than 5) in Rust.
+Examples must be idiomatic for this workspace: edition-current Rust, `thiserror` error enums, `tracing` for logs, and `async`/`await` only where the subject is genuinely asynchronous.
+Examples are fabricated; do not invent tooling the workspace does not use.
 Each example has a brief description providing context, followed by the Bad/Good code pair.
 When more than one example is provided, present them as a numbered list.
 Always show Bad first, then Good.
 Use comments to explain why each is bad or good.
+Examples show the least invented code that carries the principle, cite no module, and never transcribe real code — no rename anywhere in the workspace may be able to falsify the doc ([code](code.md) §6).
 
 **Note:** The templates below use `\`` to represent backticks.
 Do not escape backticks in the actual document — use literal code block fences.
@@ -59,12 +65,12 @@ Do not escape backticks in the actual document — use literal code block fences
 {{description and context}}
 
 \`\`\`rust
-// Bad — {{why this violates the principle}}
+// ❌ Bad — {{why this violates the principle}}
 {{bad_code}}
 \`\`\`
 
 \`\`\`rust
-// Good — {{why this follows the principle}}
+// ✅ Good — {{why this follows the principle}}
 {{good_code}}
 \`\`\`
 ```
@@ -76,12 +82,12 @@ Do not escape backticks in the actual document — use literal code block fences
 {{description and context}}
 
 \`\`\`rust
-// Bad — {{why this violates the principle}}
+// ❌ Bad — {{why this violates the principle}}
 {{bad_code}}
 \`\`\`
 
 \`\`\`rust
-// Good — {{why this follows the principle}}
+// ✅ Good — {{why this follows the principle}}
 {{good_code}}
 \`\`\`
 
@@ -89,12 +95,12 @@ Do not escape backticks in the actual document — use literal code block fences
 {{description and context}}
 
 \`\`\`rust
-// Bad — {{why this violates the principle}}
+// ❌ Bad — {{why this violates the principle}}
 {{bad_code}}
 \`\`\`
 
 \`\`\`rust
-// Good — {{why this follows the principle}}
+// ✅ Good — {{why this follows the principle}}
 {{good_code}}
 \`\`\`
 ```
@@ -130,7 +136,7 @@ Not project-internal.
 
 ## Template
 
-Every principle guideline document MUST follow this template:
+Every principle rule document MUST follow this template:
 
 ```markdown
 ---
@@ -141,8 +147,6 @@ scope: "global"
 ---
 
 # {{Principle Title}} ({{Parenthetical Clarification}})
-
-**MANDATORY for ALL code in the workspace**
 
 ## Rule
 
@@ -178,5 +182,5 @@ scope: "global"
 
 ## References
 
-- [code](code.md) - Extends: Base code guideline documentation format specification
+- [code](code.md) - Extends: Base code rules documentation format specification
 
