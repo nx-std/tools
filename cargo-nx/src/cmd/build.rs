@@ -1,3 +1,12 @@
+//! The `build` subcommand: compile a project for the Switch and pack the result.
+//!
+//! Runs `cargo build` against the Switch target and reads its JSON message stream
+//! to learn which artifact was produced, then packs that artifact into the format
+//! the package's `[package.metadata.nx]` block asks for.
+//!
+//! The output format is declared per package, and a package may declare only one:
+//! `nx.nro` and `nx.nsp` together are rejected rather than resolved.
+
 use std::{
     io::{self, BufReader},
     path::{Path, PathBuf},

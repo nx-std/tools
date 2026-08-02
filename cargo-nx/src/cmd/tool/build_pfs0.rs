@@ -1,3 +1,5 @@
+//! `build_pfs0` subcommand — pack a directory into a PFS0 archive.
+
 use std::{io, path::PathBuf};
 
 use nx_object::write::{Pfs0Builder, pfs0};

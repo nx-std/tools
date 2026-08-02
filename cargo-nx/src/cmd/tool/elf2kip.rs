@@ -1,3 +1,9 @@
+//! `elf2kip` subcommand — convert a linked ELF into a KIP1.
+//!
+//! Unlike the NRO and NSO conversions, this one needs a JSON process descriptor
+//! as well as the ELF: a KIP1 header carries the process metadata and kernel
+//! capabilities, which cannot be derived from the executable.
+
 use std::{
     fs,
     io::{self, BufWriter},

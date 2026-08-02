@@ -1,3 +1,5 @@
+//! `nacptool` subcommand — assemble NACP control data from command-line fields.
+
 use std::{io, num::ParseIntError, path::PathBuf};
 
 use nx_object::write::{NacpBuilder, nacp};

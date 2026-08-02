@@ -1,3 +1,5 @@
+//! `elf2nso` subcommand — convert a linked ELF into an NSO.
+
 use std::{fs, io, path::PathBuf};
 
 use nx_object::{

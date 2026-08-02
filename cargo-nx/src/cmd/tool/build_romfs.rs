@@ -1,3 +1,5 @@
+//! `build_romfs` subcommand — pack a directory into a RomFS image.
+
 use std::{
     fs::OpenOptions,
     io::{self, Write},

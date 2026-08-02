@@ -1,3 +1,5 @@
+//! `npdmtool` subcommand — compile a JSON process descriptor into an NPDM.
+
 use std::{io, path::PathBuf};
 
 use cargo_nx::npdm::{self, NpdmDescriptor};

@@ -1,3 +1,9 @@
+//! `elf2nro` subcommand — convert a linked ELF into an NRO.
+//!
+//! An icon, NACP and RomFS may be supplied; when any is present they are written
+//! as the NRO's asset section, and when none is the output is a bare NRO rather
+//! than one carrying an empty section.
+
 use std::{io, path::PathBuf};
 
 use nx_object::{
