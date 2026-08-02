@@ -19,6 +19,13 @@ pub mod manifest;
 
 /// Handle the `new` subcommand: scaffold a new Switch homebrew project by
 /// proxying `cargo new` and patching its output with the nx configuration.
+///
+/// # Errors
+///
+/// Returns an error if `cargo new` cannot be launched or exits unsuccessfully, or
+/// if the manifest it generated cannot be read, parsed, or patched. Cargo reports
+/// the cause of its own failures on stderr — an existing destination or an invalid
+/// package name surfaces there rather than here.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     run_cargo_new(&args)?;
 

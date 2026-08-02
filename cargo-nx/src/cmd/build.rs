@@ -31,6 +31,14 @@ const DEFAULT_NRO_ICON: &[u8] = include_bytes!(concat!(
 ));
 
 /// Handle the `build` subcommand.
+///
+/// # Errors
+///
+/// Returns an error if workspace metadata cannot be read, if the package named by
+/// `--package` is absent or declares more than one output format, if `cargo build`
+/// cannot be spawned or exits non-zero, or if the artifact it produced cannot be
+/// read and packed. A non-zero `cargo build` status is propagated as the command's
+/// own exit code rather than collapsed to a generic failure.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     let metadata = MetadataCommand::new()
         .manifest_path("./Cargo.toml")

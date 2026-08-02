@@ -7,6 +7,12 @@ use nx_object::{
     write::nso,
 };
 
+/// Handle the `elf2nso` invocation.
+///
+/// # Errors
+///
+/// Returns an error if the ELF cannot be read or parsed, if the NSO cannot be
+/// assembled, or if the output cannot be written.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     // Load ELF file
     let elf_data = fs::read(&args.elf_file).map_err(|err| Error::ReadElf {

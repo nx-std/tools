@@ -4,6 +4,12 @@ use std::{io, path::PathBuf};
 
 use nx_object::write::{Pfs0Builder, pfs0};
 
+/// Handle the `build_pfs0` invocation.
+///
+/// # Errors
+///
+/// Returns an error if the input directory cannot be collected into entries, if
+/// the archive cannot be serialized, or if the output cannot be written.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     // Build PFS0 from directory
     let pfs0_builder =

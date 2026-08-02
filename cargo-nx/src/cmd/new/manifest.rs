@@ -12,6 +12,12 @@ use super::{PackageKind, assets};
 const NX_STD_GIT: &str = "https://github.com/nx-std/mono";
 
 /// Read `package.name` from a `cargo new`-generated manifest.
+///
+/// # Errors
+///
+/// Distinguishes a manifest that is not valid TOML from one that parses but has no
+/// `package.name`, since only the first indicates Cargo produced something
+/// unexpected.
 pub fn package_name(manifest: &str) -> Result<String, PackageNameError> {
     let doc: DocumentMut = manifest
         .parse()

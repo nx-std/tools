@@ -11,6 +11,13 @@ use nx_object::{
     write::{RomFsBuilder, nro, romfs},
 };
 
+/// Handle the `elf2nro` invocation.
+///
+/// # Errors
+///
+/// Returns an error if the ELF cannot be read or parsed, if a supplied icon,
+/// NACP, or RomFS cannot be read, if the RomFS directory cannot be packed, if the
+/// NRO cannot be assembled, or if the output cannot be written.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     // Read ELF file
     let elf_data = std::fs::read(&args.elf_file).map_err(|err| Error::ReadElf {

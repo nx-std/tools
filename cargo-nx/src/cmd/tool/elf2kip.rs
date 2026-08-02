@@ -16,6 +16,13 @@ use nx_object::{
     write::{kip, npdm::KernelCapability},
 };
 
+/// Handle the `elf2kip` invocation.
+///
+/// # Errors
+///
+/// Returns an error if the ELF or the JSON descriptor cannot be read or parsed,
+/// if the descriptor's kernel capabilities cannot be lowered, if the KIP1 cannot
+/// be assembled, or if the output file cannot be created or written.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     // Load and parse ELF file
     let elf_data = fs::read(&args.elf_file).map_err(|err| Error::ReadElf {

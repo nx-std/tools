@@ -5,6 +5,13 @@ use std::path::{Path, PathBuf};
 use cargo_nx::npdm::{self, NpdmDescriptor};
 
 /// Build an NPDM image from a JSON descriptor file on disk.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read, if it is not valid JSON, if the
+/// JSON is not a well-formed descriptor, or if the descriptor cannot be lowered
+/// into an NPDM. The path is carried on the read and parse failures, since those
+/// are the ones a user resolves by editing a file.
 pub fn build_npdm_from_file(json_path: &Path) -> Result<Vec<u8>, Error> {
     let json_content = std::fs::read_to_string(json_path).map_err(|err| Error::ReadJson {
         path: json_path.to_path_buf(),
@@ -19,6 +26,11 @@ pub fn build_npdm_from_file(json_path: &Path) -> Result<Vec<u8>, Error> {
 }
 
 /// Build an NPDM image from an already-parsed JSON value.
+///
+/// # Errors
+///
+/// Returns an error if the value is not a well-formed descriptor, or if the
+/// descriptor cannot be lowered into an NPDM.
 pub fn build_npdm_from_value(json: &serde_json::Value) -> Result<Vec<u8>, Error> {
     let descriptor =
         <NpdmDescriptor as serde::Deserialize>::deserialize(json).map_err(Error::ParseValue)?;

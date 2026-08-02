@@ -5,6 +5,11 @@ use nx_object::write::{Pfs0Builder, pfs0};
 /// Build an NSP image from a `main` NSO and a `main.npdm`.
 ///
 /// The bytes are assembled into a PFS0 archive without touching the filesystem.
+///
+/// # Errors
+///
+/// Returns an error if either entry is rejected by the archive, or if the archive
+/// cannot be serialized.
 pub fn build_nsp(main_nso: Vec<u8>, main_npdm: Vec<u8>) -> Result<Vec<u8>, Error> {
     Pfs0Builder::new()
         .add_file("main", main_nso)
