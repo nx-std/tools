@@ -1,3 +1,15 @@
+//! Validated reader over an NPDM descriptor.
+//!
+//! [`Npdm::try_from_bytes`] checks all three magics and proves the ACID and ACI0
+//! sections lie inside the buffer, so the header accessors borrow without
+//! re-checking.
+//!
+//! Validation stops at the section boundary: the filesystem-access,
+//! service-access and kernel-capability blocks nested inside ACI0 are bounds
+//! checked when they are asked for, which is why those accessors return `Result`
+//! while the header ones do not. Their offsets are relative to the enclosing
+//! section, so resolving one means adding the section's own offset first.
+
 use zerocopy::FromBytes;
 
 use crate::raw::npdm::{ACI0_MAGIC, ACID_MAGIC, Aci0Header, AcidHeader, META_MAGIC, NpdmHeader};

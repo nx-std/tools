@@ -1,3 +1,13 @@
+//! Validated reader over a RomFS image, with directory traversal and file lookup.
+//!
+//! RomFS carries no magic, so [`RomFs::try_from_bytes`] can only check the header's
+//! self-reported size and table extents — a buffer that satisfies those parses
+//! whether or not it is a RomFS.
+//!
+//! Entries are addressed by byte offset into the metadata tables rather than by
+//! index, and the tables are read on demand, so traversal and [`RomFs::open`] are
+//! fallible at every step rather than only at construction.
+
 use zerocopy::FromBytes;
 
 use crate::raw::romfs::{RomFsDirEntry, RomFsFileEntry, RomFsHeader};

@@ -1,3 +1,13 @@
+//! Validated reader over an NRO image and its optional asset section.
+//!
+//! [`Nro::try_from_bytes`] checks the magic and proves every segment lies inside
+//! the buffer before borrowing it, so the segment accessors return slices without
+//! re-checking and cannot panic on a malformed image.
+//!
+//! The asset section is optional and detected by its own magic past the end of the
+//! executable, so the asset accessors return `None` for a bare NRO rather than
+//! failing.
+
 use zerocopy::FromBytes;
 
 use crate::raw::nro::{
