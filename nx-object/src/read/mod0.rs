@@ -1,4 +1,11 @@
-#![expect(dead_code)]
+//! Validated reader over an embedded MOD0 header.
+//!
+//! [`Mod0::try_from_bytes`] checks the magic and the length before borrowing, so
+//! every accessor past it reads a header known to be present and complete.
+//!
+//! The offsets it returns are signed and relative to the MOD0 header's own
+//! position, so resolving one means adding it to where the header was found —
+//! this reader does not know that address and cannot do it for the caller.
 
 use zerocopy::FromBytes;
 
