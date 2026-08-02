@@ -6,8 +6,6 @@
 //! the deserialization boundary so the rest of the descriptor works with decoded
 //! `u64` values.
 
-use std::fmt;
-
 /// A `u64` encoded as a hexadecimal string in the descriptor JSON.
 ///
 /// Accepts both prefixed (`"0x1F00"`) and unprefixed (`"1F00"`) forms on
@@ -22,8 +20,8 @@ impl HexU64 {
     }
 }
 
-impl fmt::Display for HexU64 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for HexU64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "0x{:x}", self.0)
     }
 }
@@ -80,7 +78,7 @@ impl<'de> serde::Deserialize<'de> for U64OrHex {
         impl serde::de::Visitor<'_> for Visitor {
             type Value = U64OrHex;
 
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.write_str("a u64 integer or a hexadecimal string")
             }
 

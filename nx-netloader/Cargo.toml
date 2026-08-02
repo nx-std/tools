@@ -6,6 +6,6 @@ authors = ["LNSD"]
 
 [dependencies]
 flate2 = "1.0"
-thiserror.workspace = true
-tokio = { version = "1.42", default-features = false, features = ["io-std", "io-util", "macros", "net", "time"] }
-tracing = "0.1"
+thiserror = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "time"] }
+tracing = { workspace = true, features = ["attributes", "std"] }

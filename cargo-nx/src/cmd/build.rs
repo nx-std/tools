@@ -918,7 +918,7 @@ mod tests {
     use crate::ui::{CliError as _, EXIT_FAILURE};
 
     #[test]
-    fn it_propagates_cargo_build_exit_code() {
+    fn exit_code_for_cargo_build_failure_propagates_the_child_status() {
         //* Given
         let err = Error::CargoBuildFailed { code: 101 };
 
@@ -930,7 +930,7 @@ mod tests {
     }
 
     #[test]
-    fn it_defaults_to_failure_exit_code_for_other_errors() {
+    fn exit_code_for_other_errors_defaults_to_failure() {
         //* Given
         let err = Error::MissingNpdm;
 

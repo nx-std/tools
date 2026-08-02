@@ -7,7 +7,7 @@
 //! `.cargo/config.toml` enabling `build-std`.
 
 use std::{
-    fmt, io,
+    io,
     path::{Path, PathBuf},
     process::{Command, ExitStatus},
 };
@@ -211,8 +211,8 @@ pub enum PackageKind {
     Nsp,
 }
 
-impl fmt::Display for PackageKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for PackageKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let text = match self {
             PackageKind::Lib => "lib",
             PackageKind::Nro => "nro",

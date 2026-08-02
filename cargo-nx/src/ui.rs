@@ -143,7 +143,7 @@ mod tests {
     struct LeafError;
 
     #[test]
-    fn it_renders_error_with_full_cause_chain() {
+    fn render_error_with_a_source_chain_lists_every_cause() {
         //* Given
         let err = TopError(MidError(LeafError));
         let mut buf = Vec::new();
@@ -160,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn it_renders_error_without_causes() {
+    fn render_error_without_a_source_prints_only_the_message() {
         //* Given
         let err = LeafError;
         let mut buf = Vec::new();
