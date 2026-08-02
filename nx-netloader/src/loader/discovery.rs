@@ -90,13 +90,18 @@ pub async fn discover(timeout: Duration, retries: u32) -> io::Result<Option<IpAd
                 Ok(ip_addr) => {
                     return Ok(Some(ip_addr));
                 }
-                // If we reached the max number of retries, return an error
+                // The last attempt's failure is the one the caller sees; the console is
+                // either absent or unreachable and there is nothing left to try.
                 Err(err) if attempt + 1 == retries => {
                     return Err(err);
                 }
+                // A send or receive failure on an earlier attempt is discarded: discovery
+                // is a broadcast on an unreliable transport, so a dropped datagram or a
+                // console that has not finished booting is the expected case, not a fault.
                 Err(_) => continue,
             },
-            // If the timeout was reached, retry
+            // The timeout elapsed with no reply. It carries no information beyond "no
+            // console answered within `timeout`", which is what the next attempt retests.
             Err(_) => continue,
         }
     }
