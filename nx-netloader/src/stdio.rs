@@ -33,7 +33,7 @@ pub async fn start_server<A: ToSocketAddrs>(addr: A) -> io::Result<()> {
     let listener = TcpListener::bind(&addr).await?;
     let (stream, _) = listener.accept().await?;
 
-    tracing::debug!("connection accepted from {}", stream.peer_addr()?);
+    tracing::debug!(console_addr = %stream.peer_addr()?, "accepted a stdio connection");
     handle_stream(stream).await
 }
 
