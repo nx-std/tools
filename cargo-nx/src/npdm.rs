@@ -15,7 +15,7 @@ mod hex;
 mod kernel_capability;
 
 pub use hex::{HexU64, U64OrHex};
-pub use kernel_capability::KernelCapabilityDescriptor;
+pub use kernel_capability::{KernelCapabilityDescriptor, KernelFlagsValue};
 use nx_object::write::npdm::{
     AciData, AcidData, FilesystemAccess, KernelCapability, NpdmBuilder, NpdmMetadata,
     SaveDataOwnerId, ServiceAccess,

@@ -25,15 +25,12 @@ pub fn build_npdm_from_file(json_path: &Path) -> Result<Vec<u8>, Error> {
     descriptor.build().map_err(Error::Build)
 }
 
-/// Build an NPDM image from an already-parsed JSON value.
+/// Build an NPDM image from a descriptor assembled in memory.
 ///
 /// # Errors
 ///
-/// Returns an error if the value is not a well-formed descriptor, or if the
-/// descriptor cannot be lowered into an NPDM.
-pub fn build_npdm_from_value(json: &serde_json::Value) -> Result<Vec<u8>, Error> {
-    let descriptor =
-        <NpdmDescriptor as serde::Deserialize>::deserialize(json).map_err(Error::ParseValue)?;
+/// Returns an error if the descriptor cannot be lowered into an NPDM.
+pub fn build_npdm_from_descriptor(descriptor: NpdmDescriptor) -> Result<Vec<u8>, Error> {
     descriptor.build().map_err(Error::Build)
 }
 
@@ -53,10 +50,6 @@ pub enum Error {
         path: PathBuf,
         source: serde_json::Error,
     },
-
-    /// Failed to deserialize the in-memory NPDM descriptor value.
-    #[error("Failed to deserialize the NPDM descriptor")]
-    ParseValue(#[source] serde_json::Error),
 
     /// Failed to build the NPDM image from the descriptor.
     #[error("Failed to build the NPDM image from the descriptor")]

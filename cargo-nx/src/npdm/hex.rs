@@ -20,6 +20,22 @@ impl HexU64 {
     }
 }
 
+impl From<u64> for HexU64 {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl std::str::FromStr for HexU64 {
+    type Err = std::num::ParseIntError;
+
+    /// Accepts both the prefixed (`"0x1F00"`) and unprefixed (`"1F00"`) forms, so a
+    /// caller never has to strip a prefix before parsing.
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        parse_hex_u64(input).map(Self)
+    }
+}
+
 impl std::fmt::Display for HexU64 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "0x{:x}", self.0)

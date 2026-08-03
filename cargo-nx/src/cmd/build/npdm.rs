@@ -1,164 +1,172 @@
-//! Lowering of a package's inline `[package.metadata.nx.nsp.npdm]` block into the
-//! JSON descriptor the NPDM builder reads.
+//! Conversion of a package's inline `[package.metadata.nx.nsp.npdm]` block into the
+//! process descriptor the NPDM builder takes.
 //!
 //! The manifest spells values the way a person writes them — `0x`-prefixed hex,
-//! dotted kernel versions, syscalls by name — and the descriptor wants them
-//! normalised. Every conversion that can fail on user input happens here, so the
-//! error names the manifest key rather than a position in the generated JSON.
+//! dotted kernel versions, syscalls by name — and the descriptor wants them decoded.
+//! Everything that can fail on user input fails here, naming the manifest key that
+//! caused it, so no later stage has to report a problem in terms the author never
+//! wrote.
 
-use super::metadata::InlineNpdm;
+use cargo_nx::npdm::{
+    FilesystemAccessDescriptor, HexU64, KernelCapabilityDescriptor, KernelFlagsValue,
+    NpdmDescriptor,
+};
 
-/// Lower the inline `[package.metadata.nx.nsp.npdm]` block into descriptor JSON.
+use super::metadata::{InlineKernelCapabilities, InlineNpdm};
+
+/// Convert the inline block into a process descriptor.
 ///
 /// # Errors
 ///
-/// Returns an error if a declared syscall name is not one the kernel defines, or
-/// if `kernel_version` is dotted but not `major.minor` with a minor below 16.
-pub fn convert_inline_npdm_to_json(
-    inline: &InlineNpdm,
-) -> Result<serde_json::Value, ConvertNpdmError> {
-    // Strip `0x` prefixes from hex values (parser expects bare hex digits)
-    let program_id = strip_hex_prefix(&inline.program_id);
-    let main_thread_stack_size = strip_hex_prefix(&inline.main_thread_stack_size);
+/// Returns an error if a hexadecimal field cannot be decoded, if the kernel-flags
+/// block is only partly specified, if a declared syscall is not one the kernel
+/// defines, or if `kernel_version` is dotted but not `major.minor` with a minor
+/// below 16.
+pub fn to_descriptor(inline: &InlineNpdm) -> Result<NpdmDescriptor, ConvertNpdmError> {
+    let program_id = parse_hex("program_id", &inline.program_id)?;
 
-    // Format version as hex string (parser expects hex string, not JSON number)
-    let version = format!("{:x}", inline.version);
-
-    let mut json = serde_json::json!({
-        "name": inline.name,
-        "main_thread_stack_size": main_thread_stack_size,
-        "main_thread_priority": inline.main_thread_priority,
-        "default_cpu_id": inline.main_thread_core_number,
-        "version": version,
-        "address_space_type": inline.address_space_type,
-        "is_64_bit": inline.is_64_bit,
-        "optimize_memory_allocation": inline.optimize_memory_allocation,
-        "disable_device_address_space_merge": inline.disable_device_address_space_merge,
-        "program_id": program_id,
-        // ACID required fields
-        "is_retail": inline.is_retail,
-        "pool_partition": 0,
-        "program_id_range_min": program_id,
-        "program_id_range_max": program_id,
-    });
-
-    // Add filesystem_access (always required by parser)
-    if let Some(ref fs_access) = inline.fs_access_control {
-        // Strip `0x` prefix from permissions hex string
-        let permissions = strip_hex_prefix(&fs_access.flags);
-        json["filesystem_access"] = serde_json::json!({
-            "permissions": permissions
-        });
-    } else {
-        // Emit default value when not specified (parser requires this field)
-        json["filesystem_access"] = serde_json::json!({
-            "permissions": "0"
-        });
-    }
-
-    // Add service_access if present (emit string arrays, not objects)
-    if let Some(ref svc_access) = inline.service_access_control {
-        // Parser expects string arrays for service_access and service_host
-        if !svc_access.accessed_services.is_empty() {
-            json["service_access"] = serde_json::json!(svc_access.accessed_services);
-        }
-
-        if !svc_access.hosted_services.is_empty() {
-            json["service_host"] = serde_json::json!(svc_access.hosted_services);
-        }
-    }
-
-    // Add kernel_capabilities (always required by parser)
-    json["kernel_capabilities"] = serde_json::json!([]);
-
-    if let Some(ref kernel) = inline.kernel_capabilities {
-        // SAFETY: `kernel_capabilities` was just set to an array literal above.
-        let caps = json["kernel_capabilities"]
-            .as_array_mut()
-            .expect("kernel_capabilities is an array");
-
-        // Add kernel_flags capability (not thread_info)
-        if kernel.highest_priority.is_some()
-            || kernel.lowest_priority.is_some()
-            || kernel.max_core_number.is_some()
-            || kernel.min_core_number.is_some()
-        {
-            // Parser expects nested value object with specific field names
-            let mut value = serde_json::Map::new();
-
-            if let Some(highest) = kernel.highest_priority {
-                value.insert(
-                    "highest_thread_priority".to_string(),
-                    serde_json::json!(highest),
-                );
-            }
-            if let Some(lowest) = kernel.lowest_priority {
-                value.insert(
-                    "lowest_thread_priority".to_string(),
-                    serde_json::json!(lowest),
-                );
-            }
-            if let Some(max_core) = kernel.max_core_number {
-                value.insert("highest_cpu_id".to_string(), serde_json::json!(max_core));
-            }
-            if let Some(min_core) = kernel.min_core_number {
-                value.insert("lowest_cpu_id".to_string(), serde_json::json!(min_core));
-            }
-
-            caps.push(serde_json::json!({
-                "type": "kernel_flags",
-                "value": value
-            }));
-        }
-
-        // Add syscalls capability (not syscall_mask)
-        // Parser expects object mapping syscall names to hex ID strings
-        if !kernel.enable_system_calls.is_empty() {
-            let mut syscall_map = serde_json::Map::new();
-
-            for syscall_name in &kernel.enable_system_calls {
-                // Map syscall name to actual kernel syscall ID
-                let Some(id) = syscall_name_to_id(syscall_name) else {
-                    return Err(ConvertNpdmError::UnknownSyscall {
-                        name: syscall_name.clone(),
-                    });
-                };
-                syscall_map.insert(syscall_name.clone(), serde_json::json!(id));
-            }
-
-            caps.push(serde_json::json!({
-                "type": "syscalls",
-                "value": syscall_map
-            }));
-        }
-
-        // Add kernel_version capability if present
-        if let Some(ref version) = kernel.kernel_version {
-            // Convert dotted version (e.g., "3.0") to hex format if needed
-            let version_value = if version.contains('.') {
-                kernel_version_to_hex(version).ok_or_else(|| {
-                    ConvertNpdmError::InvalidKernelVersion {
-                        value: version.clone(),
-                    }
-                })?
-            } else {
-                // Already in hex format, use as-is
-                version.clone()
-            };
-
-            caps.push(serde_json::json!({
-                "type": "min_kernel_version",
-                "value": version_value
-            }));
-        }
-    }
-
-    Ok(json)
+    Ok(NpdmDescriptor {
+        name: inline.name.clone(),
+        program_id,
+        main_thread_stack_size: parse_hex(
+            "main_thread_stack_size",
+            &inline.main_thread_stack_size,
+        )?,
+        main_thread_priority: inline.main_thread_priority,
+        default_cpu_id: inline.main_thread_core_number,
+        version: u64::from(inline.version).into(),
+        address_space_type: inline.address_space_type,
+        is_64_bit: inline.is_64_bit,
+        optimize_memory_allocation: inline.optimize_memory_allocation,
+        disable_device_address_space_merge: inline.disable_device_address_space_merge,
+        enable_alias_region_extra_size: false,
+        prevent_code_reads: false,
+        is_retail: inline.is_retail,
+        pool_partition: 0,
+        // The inline block authorizes exactly the one program it declares, rather
+        // than a range: a manifest that wanted a range would use `npdm_json`.
+        program_id_range_min: program_id,
+        program_id_range_max: program_id,
+        filesystem_access: FilesystemAccessDescriptor {
+            permissions: match inline.fs_access_control.as_ref() {
+                Some(access) => parse_hex("fs_access_control.flags", &access.flags)?,
+                None => 0u64.into(),
+            },
+            content_owner_ids: Vec::new(),
+            save_data_owner_ids: Vec::new(),
+        },
+        service_host: inline
+            .service_access_control
+            .as_ref()
+            .map(|access| access.hosted_services.clone())
+            .unwrap_or_default(),
+        service_access: inline
+            .service_access_control
+            .as_ref()
+            .map(|access| access.accessed_services.clone())
+            .unwrap_or_default(),
+        kernel_capabilities: match inline.kernel_capabilities.as_ref() {
+            Some(capabilities) => to_capabilities(capabilities)?,
+            None => Vec::new(),
+        },
+    })
 }
 
-/// Errors produced while lowering the inline NPDM metadata into descriptor JSON.
+/// Decode a hexadecimal manifest field, naming it if it cannot be decoded.
+fn parse_hex(field: &'static str, value: &str) -> Result<HexU64, ConvertNpdmError> {
+    value
+        .parse()
+        .map_err(|source| ConvertNpdmError::InvalidHex {
+            field,
+            value: value.to_owned(),
+            source,
+        })
+}
+
+/// Convert the inline kernel-capability block into descriptor entries.
+fn to_capabilities(
+    inline: &InlineKernelCapabilities,
+) -> Result<Vec<KernelCapabilityDescriptor>, ConvertNpdmError> {
+    let mut capabilities = Vec::new();
+
+    // The four bounds describe one range, and the descriptor has no way to express
+    // a partial one, so either all of them are given or none is.
+    let flags = [
+        ("highest_priority", inline.highest_priority),
+        ("lowest_priority", inline.lowest_priority),
+        ("max_core_number", inline.max_core_number),
+        ("min_core_number", inline.min_core_number),
+    ];
+    let missing: Vec<&'static str> = flags
+        .iter()
+        .filter(|(_, value)| value.is_none())
+        .map(|(key, _)| *key)
+        .collect();
+    match missing.len() {
+        0 => capabilities.push(KernelCapabilityDescriptor::KernelFlags(KernelFlagsValue {
+            highest_thread_priority: inline.highest_priority.unwrap_or_default(),
+            lowest_thread_priority: inline.lowest_priority.unwrap_or_default(),
+            highest_cpu_id: inline.max_core_number.unwrap_or_default(),
+            lowest_cpu_id: inline.min_core_number.unwrap_or_default(),
+        })),
+        4 => {}
+        _ => {
+            return Err(ConvertNpdmError::PartialKernelFlags {
+                missing: missing.join(", "),
+            });
+        }
+    }
+
+    if !inline.enable_system_calls.is_empty() {
+        let mut syscalls = std::collections::BTreeMap::new();
+        for name in &inline.enable_system_calls {
+            let Some(id) = syscall_name_to_id(name) else {
+                return Err(ConvertNpdmError::UnknownSyscall { name: name.clone() });
+            };
+            syscalls.insert(name.clone(), id.into());
+        }
+        capabilities.push(KernelCapabilityDescriptor::Syscalls(syscalls));
+    }
+
+    if let Some(version) = inline.kernel_version.as_ref() {
+        let encoded = parse_kernel_version(version).ok_or_else(|| {
+            ConvertNpdmError::InvalidKernelVersion {
+                value: version.clone(),
+            }
+        })?;
+        capabilities.push(KernelCapabilityDescriptor::MinKernelVersion(encoded.into()));
+    }
+
+    Ok(capabilities)
+}
+
+/// Errors produced while converting the inline NPDM metadata into a descriptor.
 #[derive(Debug, thiserror::Error)]
 pub enum ConvertNpdmError {
+    /// A hexadecimal field could not be decoded.
+    ///
+    /// Holds the manifest key so the report names what the author wrote, and
+    /// accepts a `0x` prefix, so this means the value is not hexadecimal at all.
+    #[error("invalid hexadecimal value '{value}' for `{field}`")]
+    InvalidHex {
+        /// The manifest key that held the value.
+        field: &'static str,
+        /// The value that failed to decode.
+        value: String,
+        #[source]
+        source: std::num::ParseIntError,
+    },
+
+    /// The kernel-flags bounds were only partly given.
+    ///
+    /// The four keys describe a single range that the descriptor cannot express
+    /// partially, so they are set together or left out together.
+    #[error("incomplete kernel flags: `{missing}` must be set alongside the others")]
+    PartialKernelFlags {
+        /// The keys that were left out, comma-separated.
+        missing: String,
+    },
+
     /// A declared syscall is not one the kernel defines.
     ///
     /// Names must match the kernel ABI exactly, so this is usually a typo or a
@@ -180,145 +188,134 @@ pub enum ConvertNpdmError {
     },
 }
 
-/// Strip a `0x`/`0X` prefix from a hex string, if present.
-///
-/// Normalizes hex strings from TOML to bare hex digits for the NPDM descriptor.
-fn strip_hex_prefix(s: &str) -> &str {
-    s.strip_prefix("0x")
-        .or_else(|| s.strip_prefix("0X"))
-        .unwrap_or(s)
-}
-
-/// Map syscall name to actual Nintendo Switch kernel syscall ID
-///
-/// Returns the kernel syscall ID as hex string, or None if the syscall name is unknown.
-/// Uses the standard Nintendo Switch kernel syscall numbering.
-fn syscall_name_to_id(name: &str) -> Option<&'static str> {
+/// The kernel syscall number a name refers to, or `None` if the kernel defines
+/// no such syscall.
+fn syscall_name_to_id(name: &str) -> Option<u64> {
     match name {
-        "SetHeapSize" => Some("1"),
-        "SetMemoryPermission" => Some("2"),
-        "SetMemoryAttribute" => Some("3"),
-        "MapMemory" => Some("4"),
-        "UnmapMemory" => Some("5"),
-        "QueryMemory" => Some("6"),
-        "ExitProcess" => Some("7"),
-        "CreateThread" => Some("8"),
-        "StartThread" => Some("9"),
-        "ExitThread" => Some("a"),
-        "SleepThread" => Some("b"),
-        "GetThreadPriority" => Some("c"),
-        "SetThreadPriority" => Some("d"),
-        "GetThreadCoreMask" => Some("e"),
-        "SetThreadCoreMask" => Some("f"),
-        "GetCurrentProcessorNumber" => Some("10"),
-        "SignalEvent" => Some("11"),
-        "ClearEvent" => Some("12"),
-        "MapSharedMemory" => Some("13"),
-        "UnmapSharedMemory" => Some("14"),
-        "CreateTransferMemory" => Some("15"),
-        "CloseHandle" => Some("16"),
-        "ResetSignal" => Some("17"),
-        "WaitSynchronization" => Some("18"),
-        "CancelSynchronization" => Some("19"),
-        "ArbitrateLock" => Some("1a"),
-        "ArbitrateUnlock" => Some("1b"),
-        "WaitProcessWideKeyAtomic" => Some("1c"),
-        "SignalProcessWideKey" => Some("1d"),
-        "GetSystemTick" => Some("1e"),
-        "ConnectToNamedPort" => Some("1f"),
-        "SendSyncRequestLight" => Some("20"),
-        "SendSyncRequest" => Some("21"),
-        "SendSyncRequestWithUserBuffer" => Some("22"),
-        "SendAsyncRequestWithUserBuffer" => Some("23"),
-        "GetProcessId" => Some("24"),
-        "GetThreadId" => Some("25"),
-        "Break" => Some("26"),
-        "OutputDebugString" => Some("27"),
-        "ReturnFromException" => Some("28"),
-        "GetInfo" => Some("29"),
-        "FlushEntireDataCache" => Some("2a"),
-        "FlushDataCache" => Some("2b"),
-        "MapPhysicalMemory" => Some("2c"),
-        "UnmapPhysicalMemory" => Some("2d"),
-        "GetDebugFutureThreadInfo" => Some("2e"),
-        "GetLastThreadInfo" => Some("2f"),
-        "GetResourceLimitLimitValue" => Some("30"),
-        "GetResourceLimitCurrentValue" => Some("31"),
-        "SetThreadActivity" => Some("32"),
-        "GetThreadContext3" => Some("33"),
-        "WaitForAddress" => Some("34"),
-        "SignalToAddress" => Some("35"),
-        "SynchronizePreemptionState" => Some("36"),
-        "GetResourceLimitPeakValue" => Some("37"),
-        "CreateIoPool" => Some("39"),
-        "CreateIoRegion" => Some("3a"),
-        "KernelDebug" => Some("3c"),
-        "ChangeKernelTraceState" => Some("3d"),
-        "CreateSession" => Some("40"),
-        "AcceptSession" => Some("41"),
-        "ReplyAndReceiveLight" => Some("42"),
-        "ReplyAndReceive" => Some("43"),
-        "ReplyAndReceiveWithUserBuffer" => Some("44"),
-        "CreateEvent" => Some("45"),
-        "MapIoRegion" => Some("46"),
-        "UnmapIoRegion" => Some("47"),
-        "MapPhysicalMemoryUnsafe" => Some("48"),
-        "UnmapPhysicalMemoryUnsafe" => Some("49"),
-        "SetUnsafeLimit" => Some("4a"),
-        "CreateCodeMemory" => Some("4b"),
-        "ControlCodeMemory" => Some("4c"),
-        "SleepSystem" => Some("4d"),
-        "ReadWriteRegister" => Some("4e"),
-        "SetProcessActivity" => Some("4f"),
-        "CreateSharedMemory" => Some("50"),
-        "MapTransferMemory" => Some("51"),
-        "UnmapTransferMemory" => Some("52"),
-        "CreateInterruptEvent" => Some("53"),
-        "QueryPhysicalAddress" => Some("54"),
-        "QueryIoMapping" => Some("55"),
-        "CreateDeviceAddressSpace" => Some("56"),
-        "AttachDeviceAddressSpace" => Some("57"),
-        "DetachDeviceAddressSpace" => Some("58"),
-        "MapDeviceAddressSpaceByForce" => Some("59"),
-        "MapDeviceAddressSpaceAligned" => Some("5a"),
-        "MapDeviceAddressSpace" => Some("5b"),
-        "UnmapDeviceAddressSpace" => Some("5c"),
-        "InvalidateProcessDataCache" => Some("5d"),
-        "StoreProcessDataCache" => Some("5e"),
-        "FlushProcessDataCache" => Some("5f"),
-        "DebugActiveProcess" => Some("60"),
-        "BreakDebugProcess" => Some("61"),
-        "TerminateDebugProcess" => Some("62"),
-        "GetDebugEvent" => Some("63"),
-        "ContinueDebugEvent" => Some("64"),
-        "GetProcessList" => Some("65"),
-        "GetThreadList" => Some("66"),
-        "GetDebugThreadContext" => Some("67"),
-        "SetDebugThreadContext" => Some("68"),
-        "QueryDebugProcessMemory" => Some("69"),
-        "ReadDebugProcessMemory" => Some("6a"),
-        "WriteDebugProcessMemory" => Some("6b"),
-        "SetHardwareBreakPoint" => Some("6c"),
-        "GetDebugThreadParam" => Some("6d"),
-        "GetSystemInfo" => Some("6f"),
-        "CreatePort" => Some("70"),
-        "ManageNamedPort" => Some("71"),
-        "ConnectToPort" => Some("72"),
-        "SetProcessMemoryPermission" => Some("73"),
-        "MapProcessMemory" => Some("74"),
-        "UnmapProcessMemory" => Some("75"),
-        "QueryProcessMemory" => Some("76"),
-        "MapProcessCodeMemory" => Some("77"),
-        "UnmapProcessCodeMemory" => Some("78"),
-        "CreateProcess" => Some("79"),
-        "StartProcess" => Some("7a"),
-        "TerminateProcess" => Some("7b"),
-        "GetProcessInfo" => Some("7c"),
-        "CreateResourceLimit" => Some("7d"),
-        "SetResourceLimitLimitValue" => Some("7e"),
-        "CallSecureMonitor" => Some("7f"),
-        "MapInsecurePhysicalMemory" => Some("90"),
-        "UnmapInsecurePhysicalMemory" => Some("91"),
+        "SetHeapSize" => Some(0x1),
+        "SetMemoryPermission" => Some(0x2),
+        "SetMemoryAttribute" => Some(0x3),
+        "MapMemory" => Some(0x4),
+        "UnmapMemory" => Some(0x5),
+        "QueryMemory" => Some(0x6),
+        "ExitProcess" => Some(0x7),
+        "CreateThread" => Some(0x8),
+        "StartThread" => Some(0x9),
+        "ExitThread" => Some(0xa),
+        "SleepThread" => Some(0xb),
+        "GetThreadPriority" => Some(0xc),
+        "SetThreadPriority" => Some(0xd),
+        "GetThreadCoreMask" => Some(0xe),
+        "SetThreadCoreMask" => Some(0xf),
+        "GetCurrentProcessorNumber" => Some(0x10),
+        "SignalEvent" => Some(0x11),
+        "ClearEvent" => Some(0x12),
+        "MapSharedMemory" => Some(0x13),
+        "UnmapSharedMemory" => Some(0x14),
+        "CreateTransferMemory" => Some(0x15),
+        "CloseHandle" => Some(0x16),
+        "ResetSignal" => Some(0x17),
+        "WaitSynchronization" => Some(0x18),
+        "CancelSynchronization" => Some(0x19),
+        "ArbitrateLock" => Some(0x1a),
+        "ArbitrateUnlock" => Some(0x1b),
+        "WaitProcessWideKeyAtomic" => Some(0x1c),
+        "SignalProcessWideKey" => Some(0x1d),
+        "GetSystemTick" => Some(0x1e),
+        "ConnectToNamedPort" => Some(0x1f),
+        "SendSyncRequestLight" => Some(0x20),
+        "SendSyncRequest" => Some(0x21),
+        "SendSyncRequestWithUserBuffer" => Some(0x22),
+        "SendAsyncRequestWithUserBuffer" => Some(0x23),
+        "GetProcessId" => Some(0x24),
+        "GetThreadId" => Some(0x25),
+        "Break" => Some(0x26),
+        "OutputDebugString" => Some(0x27),
+        "ReturnFromException" => Some(0x28),
+        "GetInfo" => Some(0x29),
+        "FlushEntireDataCache" => Some(0x2a),
+        "FlushDataCache" => Some(0x2b),
+        "MapPhysicalMemory" => Some(0x2c),
+        "UnmapPhysicalMemory" => Some(0x2d),
+        "GetDebugFutureThreadInfo" => Some(0x2e),
+        "GetLastThreadInfo" => Some(0x2f),
+        "GetResourceLimitLimitValue" => Some(0x30),
+        "GetResourceLimitCurrentValue" => Some(0x31),
+        "SetThreadActivity" => Some(0x32),
+        "GetThreadContext3" => Some(0x33),
+        "WaitForAddress" => Some(0x34),
+        "SignalToAddress" => Some(0x35),
+        "SynchronizePreemptionState" => Some(0x36),
+        "GetResourceLimitPeakValue" => Some(0x37),
+        "CreateIoPool" => Some(0x39),
+        "CreateIoRegion" => Some(0x3a),
+        "KernelDebug" => Some(0x3c),
+        "ChangeKernelTraceState" => Some(0x3d),
+        "CreateSession" => Some(0x40),
+        "AcceptSession" => Some(0x41),
+        "ReplyAndReceiveLight" => Some(0x42),
+        "ReplyAndReceive" => Some(0x43),
+        "ReplyAndReceiveWithUserBuffer" => Some(0x44),
+        "CreateEvent" => Some(0x45),
+        "MapIoRegion" => Some(0x46),
+        "UnmapIoRegion" => Some(0x47),
+        "MapPhysicalMemoryUnsafe" => Some(0x48),
+        "UnmapPhysicalMemoryUnsafe" => Some(0x49),
+        "SetUnsafeLimit" => Some(0x4a),
+        "CreateCodeMemory" => Some(0x4b),
+        "ControlCodeMemory" => Some(0x4c),
+        "SleepSystem" => Some(0x4d),
+        "ReadWriteRegister" => Some(0x4e),
+        "SetProcessActivity" => Some(0x4f),
+        "CreateSharedMemory" => Some(0x50),
+        "MapTransferMemory" => Some(0x51),
+        "UnmapTransferMemory" => Some(0x52),
+        "CreateInterruptEvent" => Some(0x53),
+        "QueryPhysicalAddress" => Some(0x54),
+        "QueryIoMapping" => Some(0x55),
+        "CreateDeviceAddressSpace" => Some(0x56),
+        "AttachDeviceAddressSpace" => Some(0x57),
+        "DetachDeviceAddressSpace" => Some(0x58),
+        "MapDeviceAddressSpaceByForce" => Some(0x59),
+        "MapDeviceAddressSpaceAligned" => Some(0x5a),
+        "MapDeviceAddressSpace" => Some(0x5b),
+        "UnmapDeviceAddressSpace" => Some(0x5c),
+        "InvalidateProcessDataCache" => Some(0x5d),
+        "StoreProcessDataCache" => Some(0x5e),
+        "FlushProcessDataCache" => Some(0x5f),
+        "DebugActiveProcess" => Some(0x60),
+        "BreakDebugProcess" => Some(0x61),
+        "TerminateDebugProcess" => Some(0x62),
+        "GetDebugEvent" => Some(0x63),
+        "ContinueDebugEvent" => Some(0x64),
+        "GetProcessList" => Some(0x65),
+        "GetThreadList" => Some(0x66),
+        "GetDebugThreadContext" => Some(0x67),
+        "SetDebugThreadContext" => Some(0x68),
+        "QueryDebugProcessMemory" => Some(0x69),
+        "ReadDebugProcessMemory" => Some(0x6a),
+        "WriteDebugProcessMemory" => Some(0x6b),
+        "SetHardwareBreakPoint" => Some(0x6c),
+        "GetDebugThreadParam" => Some(0x6d),
+        "GetSystemInfo" => Some(0x6f),
+        "CreatePort" => Some(0x70),
+        "ManageNamedPort" => Some(0x71),
+        "ConnectToPort" => Some(0x72),
+        "SetProcessMemoryPermission" => Some(0x73),
+        "MapProcessMemory" => Some(0x74),
+        "UnmapProcessMemory" => Some(0x75),
+        "QueryProcessMemory" => Some(0x76),
+        "MapProcessCodeMemory" => Some(0x77),
+        "UnmapProcessCodeMemory" => Some(0x78),
+        "CreateProcess" => Some(0x79),
+        "StartProcess" => Some(0x7a),
+        "TerminateProcess" => Some(0x7b),
+        "GetProcessInfo" => Some(0x7c),
+        "CreateResourceLimit" => Some(0x7d),
+        "SetResourceLimitLimitValue" => Some(0x7e),
+        "CallSecureMonitor" => Some(0x7f),
+        "MapInsecurePhysicalMemory" => Some(0x90),
+        "UnmapInsecurePhysicalMemory" => Some(0x91),
         _ => None,
     }
 }
@@ -330,28 +327,26 @@ fn syscall_name_to_id(name: &str) -> Option<&'static str> {
 /// - "5.1" -> "51"
 ///
 /// Returns `None` if the version string is malformed or if minor >= 16 (which would overflow into major bits).
-fn kernel_version_to_hex(version: &str) -> Option<String> {
-    let parts: Vec<&str> = version.split('.').collect();
-    if parts.len() != 2 {
-        return None;
-    }
+fn parse_kernel_version(version: &str) -> Option<u64> {
+    // A bare hex string is already the encoded form and passes through.
+    let Some((major, minor)) = version.split_once('.') else {
+        return u64::from_str_radix(version, 16).ok();
+    };
 
-    let major: u32 = parts[0].parse().ok()?;
-    let minor: u32 = parts[1].parse().ok()?;
+    let major: u64 = major.parse().ok()?;
+    let minor: u64 = minor.parse().ok()?;
 
-    // Validate minor < 16 (minor field is 4 bits)
+    // The minor component occupies four bits, so it cannot reach 16.
     if minor >= 16 {
         return None;
     }
 
-    // Format: (major << 4) | minor in hex
-    let version_value = (major << 4) | minor;
-    Some(format!("{:x}", version_value))
+    Some((major << 4) | minor)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ConvertNpdmError, InlineNpdm, convert_inline_npdm_to_json};
+    use super::{ConvertNpdmError, InlineNpdm, to_descriptor};
 
     /// Build an `InlineNpdm` the way the build command does: by deserializing the
     /// `[package.metadata.nx.nsp.npdm]` block. `extra` is merged over the minimum
@@ -378,14 +373,14 @@ mod tests {
     }
 
     #[test]
-    fn convert_inline_npdm_to_json_with_an_unknown_syscall_fails() {
+    fn to_descriptor_with_an_unknown_syscall_fails() {
         //* Given
         let inline = inline_npdm(serde_json::json!({
             "kernel_capabilities": { "enable_system_calls": ["NotASyscall"] }
         }));
 
         //* When
-        let result = convert_inline_npdm_to_json(&inline);
+        let result = to_descriptor(&inline);
 
         //* Then
         assert!(
@@ -395,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_inline_npdm_to_json_with_an_out_of_range_kernel_version_fails() {
+    fn to_descriptor_with_an_out_of_range_kernel_version_fails() {
         //* Given
         // The minor component is encoded in four bits, so 16 does not fit.
         let inline = inline_npdm(serde_json::json!({
@@ -403,7 +398,7 @@ mod tests {
         }));
 
         //* When
-        let result = convert_inline_npdm_to_json(&inline);
+        let result = to_descriptor(&inline);
 
         //* Then
         assert!(
@@ -413,14 +408,58 @@ mod tests {
     }
 
     #[test]
-    fn convert_inline_npdm_to_json_with_a_known_syscall_succeeds() {
+    fn to_descriptor_with_partial_kernel_flags_names_the_missing_keys() {
+        //* Given
+        // The four bounds describe one range the descriptor cannot express partly.
+        let inline = inline_npdm(serde_json::json!({
+            "kernel_capabilities": { "highest_priority": 0 }
+        }));
+
+        //* When
+        let result = to_descriptor(&inline);
+
+        //* Then
+        assert!(
+            matches!(
+                result,
+                Err(ConvertNpdmError::PartialKernelFlags { ref missing })
+                    if missing.contains("lowest_priority")
+            ),
+            "the report should name the manifest keys left out, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn to_descriptor_with_all_kernel_flags_succeeds() {
+        //* Given
+        let inline = inline_npdm(serde_json::json!({
+            "kernel_capabilities": {
+                "highest_priority": 0,
+                "lowest_priority": 63,
+                "max_core_number": 3,
+                "min_core_number": 0
+            }
+        }));
+
+        //* When
+        let result = to_descriptor(&inline);
+
+        //* Then
+        assert!(
+            result.is_ok(),
+            "a fully specified kernel_flags block should convert, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn to_descriptor_with_a_known_syscall_succeeds() {
         //* Given
         let inline = inline_npdm(serde_json::json!({
             "kernel_capabilities": { "enable_system_calls": ["SetHeapSize"] }
         }));
 
         //* When
-        let result = convert_inline_npdm_to_json(&inline);
+        let result = to_descriptor(&inline);
 
         //* Then
         assert!(
