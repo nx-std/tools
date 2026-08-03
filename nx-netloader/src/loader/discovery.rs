@@ -40,48 +40,39 @@ const BROADCAST_ADDR: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::BROADCAST, SERV
 /// The _netloader_ server responds to the discovery message on UDP port `28771`.
 const RECEIVE_ADDR: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, CLIENT_PORT);
 
-/// Discover the _neloader_ server in the network.
+/// Discover the _netloader_ server in the network.
 ///
-/// This function sends a broadcast message over UDP to discover the _netloader_ server.
-/// It waits for a response within a specified timeout period and returns the IP address
-/// of the discovered server if found.
-///
-/// # Returns
-///
-///  * `Ok(Some(IpAddr))` - The IP address of the discovered server.
-///  * `Ok(None)` - No server was discovered.
-///  * `Err(io::Error)` - An error occurred during the discovery process.
+/// Broadcasts a discovery message over UDP and waits up to `timeout` for a reply,
+/// repeating up to `retries` times. `Ok(None)` means every attempt elapsed without
+/// an answer, which is the ordinary outcome when no console is listening.
 ///
 /// # Errors
 ///
-/// This function will return an error if:
-///  * The UDP socket cannot be bound to an address.
-///  * The socket cannot be set to broadcast mode.
-///  * The discovery message cannot be sent.
-///  * There is an error receiving the response.
-pub async fn discover(timeout: Duration, retries: u32) -> io::Result<Option<IpAddr>> {
-    // Create UDP socket for broadcasting the discovery message. Set it to broadcast mode.
-    let broadcast_socket = UdpSocket::bind("0.0.0.0:0").await?;
-    broadcast_socket.set_broadcast(true)?;
+/// Returns an error if either socket cannot be bound — binding the receive socket
+/// fails when another process already holds the reply port — if broadcast mode
+/// cannot be enabled, or if the final attempt fails to send or receive. A failure
+/// on an earlier attempt is retried rather than reported.
+pub async fn discover(timeout: Duration, retries: u32) -> Result<Option<IpAddr>, DiscoveryError> {
+    let broadcast_socket = UdpSocket::bind("0.0.0.0:0")
+        .await
+        .map_err(DiscoveryError::BindBroadcastSocket)?;
+    broadcast_socket
+        .set_broadcast(true)
+        .map_err(DiscoveryError::EnableBroadcast)?;
 
-    // Create UDP socket for receiving the response at `0.0.0.0:28771`
-    let receive_socket = UdpSocket::bind(RECEIVE_ADDR).await?;
+    let receive_socket = UdpSocket::bind(RECEIVE_ADDR)
+        .await
+        .map_err(DiscoveryError::BindReceiveSocket)?;
 
     for attempt in 0..retries {
         let ping_fut = async {
-            // Send a broadcast message to discover the server in the network
-            tracing::debug!(%attempt, "sending ping message");
-            if let Err(error) = send_ping_message(&broadcast_socket, BROADCAST_ADDR).await {
-                tracing::debug!(%attempt, ?error, "sendto error");
-                return Err(io::Error::other(DiscoveryError::SendPingFailed(error)));
-            }
+            tracing::debug!(attempt, "sending ping message");
+            send_ping_message(&broadcast_socket, BROADCAST_ADDR)
+                .await
+                .map_err(DiscoveryError::SendPing)?;
 
-            // Wait for a response from the server
-            tracing::debug!(%attempt, "waiting pong response");
-            match recv_pong_response(&receive_socket).await {
-                Ok(res) => Ok(res),
-                Err(error) => Err(io::Error::other(DiscoveryError::RecvPongFailed(error))),
-            }
+            tracing::debug!(attempt, "waiting pong response");
+            recv_pong_response(&receive_socket).await
         };
 
         // Run the ping future with a timeout
@@ -117,38 +108,58 @@ async fn send_ping_message<A: ToSocketAddrs>(socket: &UdpSocket, target: A) -> i
 
 /// Receive the discovery pong message (ping response) from the server.
 ///
-/// Returns the IP address of the sender if the message is valid. Otherwise, returns `None`.
-async fn recv_pong_response(socket: &UdpSocket) -> io::Result<IpAddr> {
+/// # Errors
+///
+/// Returns an error if the socket cannot be read, or if the datagram that arrived
+/// is not the expected reply — the receive port is bound to any address, so an
+/// unrelated sender can deliver one.
+async fn recv_pong_response(socket: &UdpSocket) -> Result<IpAddr, DiscoveryError> {
     let mut buf = [0u8; 0x10];
-    let (len, addr) = socket.recv_from(&mut buf).await?;
+    let (len, addr) = socket
+        .recv_from(&mut buf)
+        .await
+        .map_err(DiscoveryError::RecvPong)?;
 
     if len >= PING_MESSAGE.len() && &buf[0..PONG_MESSAGE.len()] == PONG_MESSAGE {
         Ok(addr.ip())
     } else {
-        tracing::debug!(
-            "invalid response message: '{}'",
-            String::from_utf8_lossy(&buf[..len])
-        );
-        Err(io::Error::other(DiscoveryError::InvalidResponse))
+        Err(DiscoveryError::InvalidResponse {
+            message: String::from_utf8_lossy(&buf[..len]).into_owned(),
+        })
     }
 }
 
 /// An error that occurred during the discovery process.
 #[derive(Debug, thiserror::Error)]
 pub enum DiscoveryError {
-    /// An error occurred while binding the UDP socket.
-    #[error(transparent)]
-    BindFailed(io::Error),
-    /// An error occurred while sending the discovery message.
-    #[error(transparent)]
-    SendPingFailed(io::Error),
-    /// An error occurred while receiving the discovery response.
-    #[error(transparent)]
-    RecvPongFailed(io::Error),
-    /// The received message was invalid.
-    #[error("invalid response message")]
-    InvalidResponse,
-    /// The max number of retries was reached without discovering the server.
-    #[error("discovery retries exhausted")]
-    RetriesExhausted,
+    /// The socket used to broadcast the discovery message could not be bound.
+    #[error("failed to bind the discovery broadcast socket")]
+    BindBroadcastSocket(#[source] io::Error),
+    /// Broadcast mode could not be enabled on the sending socket.
+    ///
+    /// Without it the discovery message reaches nothing, so this is fatal rather
+    /// than retried.
+    #[error("failed to enable broadcast mode on the discovery socket")]
+    EnableBroadcast(#[source] io::Error),
+    /// The socket that receives the reply could not be bound.
+    ///
+    /// The reply port is fixed by the protocol, so this usually means another
+    /// process already holds it.
+    #[error("failed to bind the discovery reply socket")]
+    BindReceiveSocket(#[source] io::Error),
+    /// The final attempt could not send the discovery message.
+    #[error("failed to send the discovery message")]
+    SendPing(#[source] io::Error),
+    /// The final attempt could not read the reply socket.
+    #[error("failed to receive a datagram on the discovery reply port")]
+    RecvPong(#[source] io::Error),
+    /// The datagram that arrived is not the expected reply.
+    ///
+    /// The reply port is bound to any address, so an unrelated sender can deliver
+    /// one. Holds the payload rendered lossily, since it need not be UTF-8.
+    #[error("unexpected reply on the discovery port: '{message}'")]
+    InvalidResponse {
+        /// The payload that arrived, rendered lossily.
+        message: String,
+    },
 }
