@@ -16,7 +16,7 @@ use std::{
 use cargo_metadata::{Artifact, Message, MetadataCommand, Package};
 use nx_object::{
     read::SetLanguage,
-    write::{NacpBuilder, RomFsBuilder, romfs},
+    write::{NacpBuilder, RomFsBuilder, nacp, romfs},
 };
 
 use crate::{pack, ui};
@@ -255,16 +255,16 @@ pub enum Error {
     ReadIcon { path: PathBuf, source: io::Error },
 
     /// The NACP control data could not be built from `Cargo.toml` metadata.
-    #[error("Failed to build NACP from metadata: {0}")]
-    BuildNacp(String),
+    #[error("Failed to build NACP from metadata")]
+    BuildNacp(#[source] BuildNacpError),
 
     /// The NRO artifact could not be assembled.
     #[error("Failed to assemble the NRO artifact")]
     BuildNro(#[source] pack::nro::Error),
 
     /// The inline NPDM metadata could not be converted to descriptor JSON.
-    #[error("Failed to convert inline NPDM metadata: {0}")]
-    ConvertNpdm(String),
+    #[error("Failed to convert inline NPDM metadata")]
+    ConvertNpdm(#[source] ConvertNpdmError),
 
     /// The crate declares neither `npdm` nor `npdm_json` for its NSP build.
     #[error("NSP build requires `npdm` or `npdm_json` under `nx.nsp`")]
@@ -528,7 +528,12 @@ fn handle_nsp_format(root: &Path, artifact: &Artifact, metadata: NspMetadata) ->
 /// - Per-language entries override the global defaults
 /// - Parses title_id and dlc_base_title_id from hex strings
 /// - Applies default values for unset fields
-fn build_nacp_from_metadata(metadata: &NacpMetadata) -> Result<Vec<u8>, String> {
+///
+/// # Errors
+///
+/// Returns an error if `title_id` is not hexadecimal, or if a name, author, or
+/// version exceeds the fixed width NACP reserves for it.
+fn build_nacp_from_metadata(metadata: &NacpMetadata) -> Result<Vec<u8>, BuildNacpError> {
     // Use defaults for unset fields
     let default_name = metadata
         .name
@@ -594,8 +599,12 @@ fn build_nacp_from_metadata(metadata: &NacpMetadata) -> Result<Vec<u8>, String> 
 
     // Parse title_id if provided
     if let Some(ref title_id_str) = metadata.title_id {
-        let title_id = u64::from_str_radix(title_id_str, 16)
-            .map_err(|err| format!("Invalid title_id '{}': {}", title_id_str, err))?;
+        let title_id = u64::from_str_radix(title_id_str, 16).map_err(|err| {
+            BuildNacpError::InvalidTitleId {
+                value: title_id_str.clone(),
+                source: err,
+            }
+        })?;
         builder = builder.application_id(title_id);
     }
 
@@ -604,9 +613,27 @@ fn build_nacp_from_metadata(metadata: &NacpMetadata) -> Result<Vec<u8>, String> 
     // automatically, so we don't need to handle it separately.
 
     // Build NACP bytes
-    builder
-        .build()
-        .map_err(|err| format!("Failed to build NACP: {}", err))
+    builder.build().map_err(BuildNacpError::Build)
+}
+
+/// Errors produced while building NACP control data from `Cargo.toml` metadata.
+#[derive(Debug, thiserror::Error)]
+pub enum BuildNacpError {
+    /// `title_id` is not a hexadecimal integer.
+    ///
+    /// The manifest writes it as a bare hex string, so a `0x` prefix is rejected
+    /// here too. Holds the offending value.
+    #[error("invalid title_id '{value}'")]
+    InvalidTitleId {
+        /// The value that failed to parse.
+        value: String,
+        #[source]
+        source: std::num::ParseIntError,
+    },
+
+    /// A field does not fit the fixed width NACP reserves for it.
+    #[error("failed to assemble the NACP control data")]
+    Build(#[source] nacp::BuildError),
 }
 
 /// The path `artifact`'s compiled ELF occupies, with its extension replaced by
@@ -618,7 +645,13 @@ fn artifact_path_with_extension(artifact: &Artifact, extension: &str) -> PathBuf
     elf.into_std_path_buf()
 }
 
-fn convert_inline_npdm_to_json(inline: &InlineNpdm) -> Result<serde_json::Value, String> {
+/// Lower the inline `[package.metadata.nx.nsp.npdm]` block into descriptor JSON.
+///
+/// # Errors
+///
+/// Returns an error if a declared syscall name is not one the kernel defines, or
+/// if `kernel_version` is dotted but not `major.minor` with a minor below 16.
+fn convert_inline_npdm_to_json(inline: &InlineNpdm) -> Result<serde_json::Value, ConvertNpdmError> {
     // Strip `0x` prefixes from hex values (parser expects bare hex digits)
     let program_id = strip_hex_prefix(&inline.program_id);
     let main_thread_stack_size = strip_hex_prefix(&inline.main_thread_stack_size);
@@ -721,12 +754,9 @@ fn convert_inline_npdm_to_json(inline: &InlineNpdm) -> Result<serde_json::Value,
             for syscall_name in &kernel.enable_system_calls {
                 // Map syscall name to actual kernel syscall ID
                 let Some(id) = syscall_name_to_id(syscall_name) else {
-                    return Err(format!(
-                        "Unknown syscall '{}' in inline NPDM metadata. \
-                         Valid syscall names must match the Switch kernel ABI (e.g., 'SetHeapSize'). \
-                         Check for typos or consult the syscall reference.",
-                        syscall_name
-                    ));
+                    return Err(ConvertNpdmError::UnknownSyscall {
+                        name: syscall_name.clone(),
+                    });
                 };
                 syscall_map.insert(syscall_name.clone(), serde_json::json!(id));
             }
@@ -742,10 +772,9 @@ fn convert_inline_npdm_to_json(inline: &InlineNpdm) -> Result<serde_json::Value,
             // Convert dotted version (e.g., "3.0") to hex format if needed
             let version_value = if version.contains('.') {
                 kernel_version_to_hex(version).ok_or_else(|| {
-                    format!(
-                        "Invalid kernel_version format '{}' - expected 'major.minor' where minor < 16",
-                        version
-                    )
+                    ConvertNpdmError::InvalidKernelVersion {
+                        value: version.clone(),
+                    }
                 })?
             } else {
                 // Already in hex format, use as-is
@@ -760,6 +789,30 @@ fn convert_inline_npdm_to_json(inline: &InlineNpdm) -> Result<serde_json::Value,
     }
 
     Ok(json)
+}
+
+/// Errors produced while lowering the inline NPDM metadata into descriptor JSON.
+#[derive(Debug, thiserror::Error)]
+pub enum ConvertNpdmError {
+    /// A declared syscall is not one the kernel defines.
+    ///
+    /// Names must match the kernel ABI exactly, so this is usually a typo or a
+    /// difference in capitalisation. Holds the offending name.
+    #[error("unknown syscall '{name}'; names must match the kernel ABI, such as `SetHeapSize`")]
+    UnknownSyscall {
+        /// The name that matched no syscall.
+        name: String,
+    },
+
+    /// `kernel_version` is dotted but not a `major.minor` pair the format accepts.
+    ///
+    /// The minor component is encoded in four bits, so it must be below 16. Holds
+    /// the offending value.
+    #[error("invalid kernel_version '{value}'; expected 'major.minor' with a minor below 16")]
+    InvalidKernelVersion {
+        /// The value that could not be encoded.
+        value: String,
+    },
 }
 
 /// Strip a `0x`/`0X` prefix from a hex string, if present.
@@ -933,8 +986,35 @@ fn kernel_version_to_hex(version: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::Error;
+    use super::{
+        BuildNacpError, ConvertNpdmError, Error, InlineNpdm, NacpMetadata,
+        build_nacp_from_metadata, convert_inline_npdm_to_json,
+    };
     use crate::ui::{CliError as _, EXIT_FAILURE};
+
+    /// Build an `InlineNpdm` the way the build command does: by deserializing the
+    /// `[package.metadata.nx.nsp.npdm]` block. `extra` is merged over the minimum
+    /// set of required fields.
+    fn inline_npdm(extra: serde_json::Value) -> InlineNpdm {
+        let mut value = serde_json::json!({
+            "name": "demo",
+            "main_thread_stack_size": "0x100000",
+            "main_thread_priority": 44,
+            "main_thread_core_number": 0,
+            "address_space_type": 3,
+            "is_64_bit": true,
+            "optimize_memory_allocation": false,
+            "disable_device_address_space_merge": false,
+            "program_id": "0x0100000000010000",
+        });
+        let (Some(object), Some(extra)) = (value.as_object_mut(), extra.as_object()) else {
+            panic!("both the base descriptor and the overlay must be JSON objects");
+        };
+        for (key, val) in extra {
+            object.insert(key.clone(), val.clone());
+        }
+        serde_json::from_value(value).expect("the descriptor fixture should deserialize")
+    }
 
     #[test]
     fn exit_code_for_cargo_build_failure_propagates_the_child_status() {
@@ -958,5 +1038,91 @@ mod tests {
 
         //* Then
         assert_eq!(code, EXIT_FAILURE);
+    }
+
+    #[test]
+    fn build_nacp_from_metadata_with_a_non_hexadecimal_title_id_fails() {
+        //* Given
+        let metadata = NacpMetadata {
+            title_id: Some("not-hex".to_string()),
+            ..Default::default()
+        };
+
+        //* When
+        let result = build_nacp_from_metadata(&metadata);
+
+        //* Then
+        assert!(
+            matches!(result, Err(BuildNacpError::InvalidTitleId { ref value, .. }) if value == "not-hex"),
+            "the offending value should be carried on the error, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn build_nacp_from_metadata_without_a_title_id_succeeds() {
+        //* Given
+        // Every other field is optional and falls back to a default.
+        let metadata = NacpMetadata::default();
+
+        //* When
+        let result = build_nacp_from_metadata(&metadata);
+
+        //* Then
+        assert!(
+            result.is_ok(),
+            "a bare metadata block should still produce NACP data, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn convert_inline_npdm_to_json_with_an_unknown_syscall_fails() {
+        //* Given
+        let inline = inline_npdm(serde_json::json!({
+            "kernel_capabilities": { "enable_system_calls": ["NotASyscall"] }
+        }));
+
+        //* When
+        let result = convert_inline_npdm_to_json(&inline);
+
+        //* Then
+        assert!(
+            matches!(result, Err(ConvertNpdmError::UnknownSyscall { ref name }) if name == "NotASyscall"),
+            "the unmatched name should be carried on the error, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn convert_inline_npdm_to_json_with_an_out_of_range_kernel_version_fails() {
+        //* Given
+        // The minor component is encoded in four bits, so 16 does not fit.
+        let inline = inline_npdm(serde_json::json!({
+            "kernel_capabilities": { "kernel_version": "3.16" }
+        }));
+
+        //* When
+        let result = convert_inline_npdm_to_json(&inline);
+
+        //* Then
+        assert!(
+            matches!(result, Err(ConvertNpdmError::InvalidKernelVersion { ref value }) if value == "3.16"),
+            "the rejected version should be carried on the error, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn convert_inline_npdm_to_json_with_a_known_syscall_succeeds() {
+        //* Given
+        let inline = inline_npdm(serde_json::json!({
+            "kernel_capabilities": { "enable_system_calls": ["SetHeapSize"] }
+        }));
+
+        //* When
+        let result = convert_inline_npdm_to_json(&inline);
+
+        //* Then
+        assert!(
+            result.is_ok(),
+            "a name matching the kernel ABI should convert, got {result:?}"
+        );
     }
 }
