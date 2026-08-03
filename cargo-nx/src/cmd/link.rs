@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use nx_netloader::loader::send::send_nro_file;
+use nx_netloader::loader::{discovery::DiscoveryError, send::send_nro_file};
 
 use crate::ui;
 
@@ -231,7 +231,7 @@ pub enum Error {
 
     /// The netloader server discovery process failed.
     #[error("Server discovery failed")]
-    Discovery(#[source] io::Error),
+    Discovery(#[source] DiscoveryError),
 
     /// Transferring the NRO file to the netloader server failed.
     #[error("Failed to send the file")]
