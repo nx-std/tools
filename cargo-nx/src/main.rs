@@ -3,23 +3,29 @@
 use tracing_subscriber::EnvFilter;
 
 mod cmd;
+mod logging;
 mod pack;
 mod ui;
 
 fn main() {
-    // Set up the diagnostic logger. User-facing output goes through `ui`.
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    // Set up the diagnostic logger. User-facing output goes through `ui`, so this
+    // channel stays silent until `RUST_LOG` asks for it: the default filter would
+    // otherwise print every command failure twice, once as a trace line and once as
+    // the report the user is meant to read.
+    let filter = match std::env::var("RUST_LOG") {
+        Ok(directives) => EnvFilter::new(directives),
+        Err(_) => EnvFilter::new("off"),
+    };
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     // Parse the command-line arguments and dispatch to the subcommand.
     let Cargo::Nx(CargoNxArgs { subcommand }) = clap::Parser::parse();
     let rc = match subcommand {
-        CargoNxSubcommand::New(args) => finish(cmd::new::handle_subcommand(args)),
-        CargoNxSubcommand::Build(args) => finish(cmd::build::handle_subcommand(args)),
-        CargoNxSubcommand::Bundle(args) => finish(cmd::bundle::handle_subcommand(args)),
-        CargoNxSubcommand::Link(args) => finish(cmd::link::handle_subcommand(args)),
-        CargoNxSubcommand::Tool(args) => finish(cmd::tool::handle_subcommand(args)),
+        CargoNxSubcommand::New(args) => finish("new", cmd::new::handle_subcommand(args)),
+        CargoNxSubcommand::Build(args) => finish("build", cmd::build::handle_subcommand(args)),
+        CargoNxSubcommand::Bundle(args) => finish("bundle", cmd::bundle::handle_subcommand(args)),
+        CargoNxSubcommand::Link(args) => finish("link", cmd::link::handle_subcommand(args)),
+        CargoNxSubcommand::Tool(args) => finish("tool", cmd::tool::handle_subcommand(args)),
     };
 
     std::process::exit(rc);
@@ -131,10 +137,21 @@ pub enum ToolSubcommand {
 ///
 /// On success returns `0`. On failure, prints the error and its full source
 /// chain via [`ui::error`] and returns the error's [`ui::CliError::exit_code`].
-fn finish<E: ui::CliError>(result: Result<(), E>) -> i32 {
+/// Report a finished subcommand and produce the process exit code.
+///
+/// A failure is reported twice on purpose: to the user through [`ui::error`], and to
+/// the diagnostic channel with its full source chain, which is what an operator
+/// running with `RUST_LOG` set is looking for.
+fn finish<E: ui::CliError>(command: &'static str, result: Result<(), E>) -> i32 {
     match result {
         Ok(()) => 0,
         Err(err) => {
+            tracing::error!(
+                command,
+                error = %err,
+                error_source = logging::error_source(&err),
+                "subcommand failed"
+            );
             ui::error(&err);
             err.exit_code()
         }
