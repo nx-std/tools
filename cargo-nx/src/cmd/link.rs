@@ -15,6 +15,17 @@ use nx_netloader::loader::send::send_nro_file;
 use crate::ui;
 
 /// Handle the `link` subcommand.
+///
+/// Re-running is safe and is the normal way to redeploy: the console overwrites
+/// the destination with each transfer. The one state that does not clean itself up
+/// is an interrupted transfer — see [`Error::TransferInterrupted`].
+///
+/// # Errors
+///
+/// Returns an error if the input is missing, is not a regular file, or is not an
+/// NRO; if no console answers discovery within the retry budget; if the transfer
+/// fails or the console rejects the file; or if the user interrupts the transfer
+/// before it completes.
 #[tokio::main(flavor = "current_thread")]
 pub async fn handle_subcommand(
     Args {
@@ -117,15 +128,19 @@ pub async fn handle_subcommand(
 
     ui::status("Sending", &format!("{dest_path} to {}", remote_addr.0));
 
-    // Send the file to the remote server
+    // Send the file to the remote server.
+    //
+    // Cancelling the transfer drops it at an await point mid-stream, so the console
+    // keeps whatever it has already written under `dest_path`. Nothing in the
+    // protocol lets the host retract that, so the command reports the interruption
+    // instead of exiting successfully.
     tokio::select! {biased;
         res = send_nro_file(remote_addr, &dest_path, &mut file, file_length, nro_args) => {
             res.map_err(Error::Send)?;
             ui::status("Finished", "file sent");
         }
         _ = tokio::signal::ctrl_c() => {
-            ui::warning("aborted by the user");
-            return Ok(());
+            return Err(Error::TransferInterrupted { path: dest_path });
         }
     }
 
@@ -221,6 +236,16 @@ pub enum Error {
     /// Transferring the NRO file to the netloader server failed.
     #[error("Failed to send the file")]
     Send(#[source] io::Error),
+
+    /// The transfer was interrupted by the user before it completed.
+    ///
+    /// The console has already created the destination file and written part of
+    /// it. The protocol has no way to withdraw a transfer in progress, so the
+    /// partial file is left there; re-running the command overwrites it.
+    #[error(
+        "Transfer interrupted; '{path}' on the console is incomplete and must be re-sent before it is run"
+    )]
+    TransferInterrupted { path: String },
 }
 
 impl ui::CliError for Error {}
