@@ -250,6 +250,27 @@ pub struct SaveDataOwnerIdDescriptor {
     pub id: HexU64,
 }
 
+impl NpdmDescriptor {
+    /// Build a complete NPDM image from this descriptor.
+    ///
+    /// Validates and converts the descriptor into the `nx-object` builder inputs,
+    /// then serializes the META/ACI0/ACID sections into the final image bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a descriptor field is outside the range the format
+    /// allows, or if two fields contradict each other. Both are rejected here
+    /// rather than at deserialization, so the failure names the descriptor's own
+    /// field rather than a JSON path.
+    pub fn build(self) -> Result<Vec<u8>, Error> {
+        let (metadata, aci, acid) = <(NpdmMetadata, AciData, AcidData)>::try_from(self)?;
+        Ok(NpdmBuilder::new(metadata)
+            .with_aci(aci)
+            .with_acid(acid)
+            .build())
+    }
+}
+
 /// Errors produced while converting a [`NpdmDescriptor`] into `nx-object` inputs.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -282,27 +303,6 @@ pub enum Error {
     /// At most one of `allow_debug`, `force_debug_prod`, or `force_debug` may be set.
     #[error("'debug_flags' capability sets more than one mutually-exclusive flag")]
     ConflictingDebugFlags,
-}
-
-impl NpdmDescriptor {
-    /// Build a complete NPDM image from this descriptor.
-    ///
-    /// Validates and converts the descriptor into the `nx-object` builder inputs,
-    /// then serializes the META/ACI0/ACID sections into the final image bytes.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a descriptor field is outside the range the format
-    /// allows, or if two fields contradict each other. Both are rejected here
-    /// rather than at deserialization, so the failure names the descriptor's own
-    /// field rather than a JSON path.
-    pub fn build(self) -> Result<Vec<u8>, Error> {
-        let (metadata, aci, acid) = <(NpdmMetadata, AciData, AcidData)>::try_from(self)?;
-        Ok(NpdmBuilder::new(metadata)
-            .with_aci(aci)
-            .with_acid(acid)
-            .build())
-    }
 }
 
 impl TryFrom<NpdmDescriptor> for (NpdmMetadata, AciData, AcidData) {
