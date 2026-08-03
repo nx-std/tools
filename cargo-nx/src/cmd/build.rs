@@ -27,7 +27,7 @@ mod npdm;
 use self::{
     metadata::{NroMetadata, NspMetadata},
     nacp::{BuildNacpError, build_nacp_from_metadata},
-    npdm::{ConvertNpdmError, convert_inline_npdm_to_json},
+    npdm::ConvertNpdmError,
 };
 use crate::{pack, ui};
 
@@ -385,8 +385,8 @@ fn handle_nsp_format(root: &Path, artifact: &Artifact, metadata: NspMetadata) ->
 
     // Build NPDM bytes (from inline TOML or external JSON file)
     let npdm_bytes = if let Some(inline_npdm) = metadata.npdm {
-        let json_value = convert_inline_npdm_to_json(&inline_npdm).map_err(Error::ConvertNpdm)?;
-        pack::npdm::build_npdm_from_value(&json_value).map_err(Error::BuildNpdm)?
+        let descriptor = npdm::to_descriptor(&inline_npdm).map_err(Error::ConvertNpdm)?;
+        pack::npdm::build_npdm_from_descriptor(descriptor).map_err(Error::BuildNpdm)?
     } else if let Some(npdm_json) = metadata.npdm_json {
         let npdm_json_path = root.join(npdm_json);
         pack::npdm::build_npdm_from_file(&npdm_json_path).map_err(Error::BuildNpdm)?
