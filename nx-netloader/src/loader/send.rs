@@ -7,6 +7,7 @@
 use std::{
     io,
     io::{BufReader, Read},
+    time::Duration,
 };
 
 use flate2::{Compression, bufread::ZlibEncoder};
@@ -21,6 +22,25 @@ const MAX_FILE_CHUNK_SIZE: usize = 0x4000;
 /// The maximum NRO command-line arguments buffer size.
 const MAX_CMD_BUF_SIZE: usize = 3072;
 
+/// How long to wait for the console to accept the connection.
+///
+/// The console is on the local network and was answering discovery moments ago, so
+/// it either accepts promptly or is no longer there.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long to wait for the console to acknowledge a step of the exchange.
+///
+/// Generous, because the console does real work before each acknowledgement: it
+/// creates the destination file after the name, and finalises the transfer after
+/// the data.
+const ACK_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long to wait for a single write to reach the console.
+///
+/// A console that stops reading leaves the socket's window full, which blocks the
+/// write rather than failing it.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Send a file to the _netloader_ server.
 ///
 /// This function sends a file to the _netloader_ server at the specified IP address. The server
@@ -34,6 +54,9 @@ const MAX_CMD_BUF_SIZE: usize = 3072;
 /// or if a write fails part-way through. A failure after the name is acknowledged
 /// leaves a partial file on the console, which the protocol offers no way to
 /// withdraw.
+///
+/// Every step is bounded by a deadline, so a console that accepts the connection
+/// and then goes quiet fails the transfer rather than hanging it.
 pub async fn send_nro_file<A: ToSocketAddrs, R: Read>(
     dst: A,
     file_name: &str,
@@ -41,8 +64,11 @@ pub async fn send_nro_file<A: ToSocketAddrs, R: Read>(
     file_length: usize,
     cmd_args: impl AsRef<[String]>,
 ) -> Result<(), SendNroError> {
-    let mut sock = TcpStream::connect(dst)
+    let mut sock = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(dst))
         .await
+        .map_err(|_| SendNroError::ConnectTimeout {
+            limit: CONNECT_TIMEOUT,
+        })?
         .map_err(SendNroError::Connect)?;
     send_file_name_and_length(&mut sock, file_name, file_length).await?;
     compress_and_send_nro_file_data(&mut sock, file_reader, file_length).await?;
@@ -120,6 +146,47 @@ pub enum SendNroError {
     /// The command-line arguments could not be written.
     #[error("failed to send the command-line arguments")]
     SendArgs(#[source] io::Error),
+
+    /// The console did not accept the connection within the deadline.
+    #[error("timed out after {limit:?} connecting to the netloader server")]
+    ConnectTimeout {
+        /// The deadline that expired.
+        limit: Duration,
+    },
+
+    /// The console did not acknowledge the file name within the deadline.
+    ///
+    /// It is reachable but not answering, so nothing has been written on it.
+    #[error("timed out after {limit:?} waiting for the file name to be acknowledged")]
+    NameAckTimeout {
+        /// The deadline that expired.
+        limit: Duration,
+    },
+
+    /// The console did not acknowledge the transferred data within the deadline.
+    ///
+    /// The whole file has been sent by this point, so the console may still be
+    /// holding it.
+    #[error("timed out after {limit:?} waiting for the transfer to be acknowledged")]
+    DataAckTimeout {
+        /// The deadline that expired.
+        limit: Duration,
+    },
+}
+
+/// Bound a write to the console with [`WRITE_TIMEOUT`].
+///
+/// An expired deadline is reported as [`io::ErrorKind::TimedOut`] so the caller can
+/// attribute it to the step it was performing, rather than every write site needing
+/// its own variant.
+async fn with_write_deadline<T>(write: impl Future<Output = io::Result<T>>) -> io::Result<T> {
+    match tokio::time::timeout(WRITE_TIMEOUT, write).await {
+        Ok(result) => result,
+        Err(_) => Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            format!("the console accepted no data for {WRITE_TIMEOUT:?}"),
+        )),
+    }
 }
 
 /// Send the file name and length to the _netloader_ server.
@@ -135,20 +202,19 @@ where
     S: AsyncRead + AsyncWrite + Unpin + ?Sized,
 {
     // Send the file name (length-prefixed)
-    write_length_prefixed(stream, file_name)
+    with_write_deadline(write_length_prefixed(stream, file_name))
         .await
         .map_err(SendNroError::SendFileName)?;
 
     // Send the file length
-    stream
-        .write_u32_le(file_length as u32)
+    with_write_deadline(stream.write_u32_le(file_length as u32))
         .await
         .map_err(SendNroError::SendFileName)?;
 
     // Wait and check the acknowledgement code
-    let rc = stream
-        .read_i32_le()
+    let rc = tokio::time::timeout(ACK_TIMEOUT, stream.read_i32_le())
         .await
+        .map_err(|_| SendNroError::NameAckTimeout { limit: ACK_TIMEOUT })?
         .map_err(SendNroError::ReadNameAck)?;
     match rc {
         0 => Ok(()),
@@ -194,7 +260,7 @@ where
         }
 
         // Send the compressed data chunk (length-prefixed)
-        write_length_prefixed(stream, &buf[..read_len])
+        with_write_deadline(write_length_prefixed(stream, &buf[..read_len]))
             .await
             .map_err(SendNroError::SendChunk)?;
 
@@ -208,9 +274,9 @@ where
     }
 
     // Wait and check the response code
-    let rc = stream
-        .read_i32_le()
+    let rc = tokio::time::timeout(ACK_TIMEOUT, stream.read_i32_le())
         .await
+        .map_err(|_| SendNroError::DataAckTimeout { limit: ACK_TIMEOUT })?
         .map_err(SendNroError::ReadDataAck)?;
     if rc != 0 {
         return Err(SendNroError::DataRejected { code: rc });
@@ -243,7 +309,7 @@ where
     }
 
     // Send the command-line arguments (length-prefixed)
-    write_length_prefixed(stream, &cmd_buf[..cmd_buf_len])
+    with_write_deadline(write_length_prefixed(stream, &cmd_buf[..cmd_buf_len]))
         .await
         .map_err(SendNroError::SendArgs)?;
 
@@ -269,7 +335,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_CMD_BUF_SIZE, send_nro_args};
+    use super::{
+        ACK_TIMEOUT, MAX_CMD_BUF_SIZE, SendNroError, send_file_name_and_length, send_nro_args,
+    };
 
     /// Run `send_nro_args` into an in-memory stream and return the payload it
     /// wrote, with the `u32` length prefix stripped and checked.
@@ -343,6 +411,24 @@ mod tests {
             payload.last(),
             Some(&0),
             "the surviving argument should still be terminated"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn send_file_name_and_length_without_an_acknowledgement_times_out() {
+        //* Given
+        // A peer that accepts the write but never answers. `_console` is held so the
+        // pipe stays open: dropping it would end the read rather than stall it.
+        let (mut stream, _console) = tokio::io::duplex(64);
+
+        //* When
+        // The runtime's clock is paused, so the deadline expires without real waiting.
+        let result = send_file_name_and_length(&mut stream, "demo.nro", 16).await;
+
+        //* Then
+        assert!(
+            matches!(result, Err(SendNroError::NameAckTimeout { limit }) if limit == ACK_TIMEOUT),
+            "a console that goes quiet should fail the transfer, not hang it, got {result:?}"
         );
     }
 }

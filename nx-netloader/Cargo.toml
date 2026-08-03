@@ -11,4 +11,4 @@ tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "t
 tracing = { workspace = true, features = ["attributes", "std"] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
