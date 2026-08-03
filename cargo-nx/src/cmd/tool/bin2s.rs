@@ -7,6 +7,7 @@ use std::{
 };
 
 use super::identifier::sanitize_identifier;
+use crate::ui;
 
 /// Entry point for the `bin2s` subcommand.
 ///
@@ -113,7 +114,7 @@ fn read_entries(inputs: &[PathBuf], apple_llvm: bool) -> Result<Vec<Entry>, Erro
         })?;
 
         if bytes.is_empty() {
-            tracing::warn!(path = %path.display(), "skipping empty input file");
+            ui::warning(&format!("skipping empty input file '{}'", path.display()));
             continue;
         }
 
