@@ -13,13 +13,15 @@ use nx_object::{
 
 use super::metadata::{NacpLangEntry, NacpMetadata};
 
-/// Convert NACP metadata from Cargo.toml to NACP bytes using nx-object
+/// Assemble NACP control data from a package's manifest metadata.
 ///
-/// NACP serialization behavior:
-/// - Uses global name/author/version as defaults for all languages
-/// - Per-language entries override the global defaults
-/// - Parses title_id and dlc_base_title_id from hex strings
-/// - Applies default values for unset fields
+/// A field the manifest leaves unset takes a placeholder default rather than
+/// failing, so this always produces usable control data. Per-language entries
+/// override the global name and author; a language absent from the table falls back
+/// to them.
+///
+/// `dlc_base_title_id` is accepted by the manifest but not applied here: the builder
+/// derives the add-on content base id from the application id itself.
 ///
 /// # Errors
 ///
@@ -147,6 +149,25 @@ mod tests {
         assert!(
             matches!(result, Err(BuildNacpError::InvalidTitleId { ref value, .. }) if value == "not-hex"),
             "the offending value should be carried on the error, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn build_nacp_from_metadata_with_a_prefixed_title_id_fails() {
+        //* Given
+        // Unlike the NPDM fields, this one is read as bare hex digits.
+        let metadata = NacpMetadata {
+            title_id: Some("0x0100000000010000".to_string()),
+            ..Default::default()
+        };
+
+        //* When
+        let result = build_nacp_from_metadata(&metadata);
+
+        //* Then
+        assert!(
+            matches!(result, Err(BuildNacpError::InvalidTitleId { .. })),
+            "a `0x` prefix should be rejected rather than stripped, got {result:?}"
         );
     }
 
