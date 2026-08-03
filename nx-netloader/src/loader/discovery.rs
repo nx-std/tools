@@ -100,35 +100,6 @@ pub async fn discover(timeout: Duration, retries: u32) -> Result<Option<IpAddr>,
     Ok(None)
 }
 
-/// Send the discovery ping message to the target address.
-async fn send_ping_message<A: ToSocketAddrs>(socket: &UdpSocket, target: A) -> io::Result<()> {
-    socket.send_to(PING_MESSAGE, target).await?;
-    Ok(())
-}
-
-/// Receive the discovery pong message (ping response) from the server.
-///
-/// # Errors
-///
-/// Returns an error if the socket cannot be read, or if the datagram that arrived
-/// is not the expected reply — the receive port is bound to any address, so an
-/// unrelated sender can deliver one.
-async fn recv_pong_response(socket: &UdpSocket) -> Result<IpAddr, DiscoveryError> {
-    let mut buf = [0u8; 0x10];
-    let (len, addr) = socket
-        .recv_from(&mut buf)
-        .await
-        .map_err(DiscoveryError::RecvPong)?;
-
-    if len >= PING_MESSAGE.len() && &buf[0..PONG_MESSAGE.len()] == PONG_MESSAGE {
-        Ok(addr.ip())
-    } else {
-        Err(DiscoveryError::InvalidResponse {
-            message: String::from_utf8_lossy(&buf[..len]).into_owned(),
-        })
-    }
-}
-
 /// An error that occurred during the discovery process.
 #[derive(Debug, thiserror::Error)]
 pub enum DiscoveryError {
@@ -162,4 +133,33 @@ pub enum DiscoveryError {
         /// The payload that arrived, rendered lossily.
         message: String,
     },
+}
+
+/// Send the discovery ping message to the target address.
+async fn send_ping_message<A: ToSocketAddrs>(socket: &UdpSocket, target: A) -> io::Result<()> {
+    socket.send_to(PING_MESSAGE, target).await?;
+    Ok(())
+}
+
+/// Receive the discovery pong message (ping response) from the server.
+///
+/// # Errors
+///
+/// Returns an error if the socket cannot be read, or if the datagram that arrived
+/// is not the expected reply — the receive port is bound to any address, so an
+/// unrelated sender can deliver one.
+async fn recv_pong_response(socket: &UdpSocket) -> Result<IpAddr, DiscoveryError> {
+    let mut buf = [0u8; 0x10];
+    let (len, addr) = socket
+        .recv_from(&mut buf)
+        .await
+        .map_err(DiscoveryError::RecvPong)?;
+
+    if len >= PING_MESSAGE.len() && &buf[0..PONG_MESSAGE.len()] == PONG_MESSAGE {
+        Ok(addr.ip())
+    } else {
+        Err(DiscoveryError::InvalidResponse {
+            message: String::from_utf8_lossy(&buf[..len]).into_owned(),
+        })
+    }
 }
