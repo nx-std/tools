@@ -8,8 +8,8 @@ use nx_object::write::{Pfs0Builder, pfs0};
 ///
 /// # Errors
 ///
-/// Returns an error if the input directory cannot be collected into entries, if
-/// the archive cannot be serialized, or if the output cannot be written.
+/// Returns an error if the input directory cannot be collected into entries, or
+/// if the output cannot be written. Serializing the archive cannot fail.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     // Build PFS0 from directory
     let pfs0_builder =
@@ -19,7 +19,7 @@ pub fn handle_subcommand(args: Args) -> Result<(), Error> {
         })?;
 
     // Build the PFS0 binary
-    let pfs0_data = pfs0_builder.build().map_err(Error::BuildArchive)?;
+    let pfs0_data = pfs0_builder.build();
 
     // Write to output file
     std::fs::write(&args.out_pfs0_filepath, &pfs0_data).map_err(|err| Error::WriteOutput {
@@ -46,12 +46,8 @@ pub enum Error {
     #[error("Failed to collect PFS0 entries from directory '{}'", path.display())]
     CollectEntries {
         path: PathBuf,
-        source: pfs0::BuildError,
+        source: pfs0::FromDirectoryError,
     },
-
-    /// Failed to build the PFS0 archive
-    #[error("Failed to build PFS0 archive")]
-    BuildArchive(#[source] pfs0::BuildError),
 
     /// Failed to write the PFS0 output file to disk
     #[error("Failed to write PFS0 file '{}'", path.display())]
