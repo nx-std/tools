@@ -9,3 +9,6 @@ flate2 = "1.0"
 thiserror = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "time"] }
 tracing = { workspace = true, features = ["attributes", "std"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

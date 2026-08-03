@@ -10,7 +10,10 @@ use std::{
     time::Duration,
 };
 
-use nx_netloader::loader::{discovery::DiscoveryError, send::send_nro_file};
+use nx_netloader::loader::{
+    discovery::DiscoveryError,
+    send::{SendNroError, send_nro_file},
+};
 
 use crate::ui;
 
@@ -235,7 +238,7 @@ pub enum Error {
 
     /// Transferring the NRO file to the netloader server failed.
     #[error("Failed to send the file")]
-    Send(#[source] io::Error),
+    Send(#[source] SendNroError),
 
     /// The transfer was interrupted by the user before it completed.
     ///
