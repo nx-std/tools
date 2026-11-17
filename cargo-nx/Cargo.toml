@@ -20,7 +20,7 @@ chrono = "0.4"
 cipher = "0.5"
 clap = { version = "4", features = ["derive"] }
 ctr = "0.10"
-num-bigint = "0.4"
+num-bigint = "0.5"
 nx-netloader = { version = "0.1.0", path = "../nx-netloader" }
 nx-object = { git = "https://github.com/nx-std/nx-object.git", rev = "f3546be37693de9e0206be13f140dfd84edce3b8", features = ["elf-parsing", "lz4-compression"] }
 rand = "0.8"
